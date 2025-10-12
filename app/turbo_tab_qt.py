@@ -27,7 +27,11 @@ from ..workers.turbo_parser_integration import TurboWordstatParser
 class ParserWorkerThread(QThread):
     """Поток для выполнения парсинга"""
     log_signal = Signal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
-    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время\r\n    log_message = Signal(str)  # Короткие уведомления в UI\r\n    error_signal = Signal(str)  # Текст ошибки для отображения\r\n    finished_signal = Signal(bool, str)  # успех, сообщение\r\n    
+    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
+    log_message = Signal(str)  # Короткие уведомления в UI
+    error_signal = Signal(str)  # Текст ошибки для отображения
+    finished_signal = Signal(bool, str)  # успех, сообщение
+    
     def __init__(self, queries, account, headless, mode, visual_mode=True, num_browsers=3):
         super().__init__()
         self.queries = queries
