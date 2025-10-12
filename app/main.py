@@ -49,6 +49,7 @@ from ..workers.frequency_runner import execute_task
 from ..workers.deep_runner import run_deep_task
 from ..core.db import Base, engine, ensure_schema, SessionLocal
 from .turbo_tab_qt import TurboParserTab
+from .full_pipeline_tab import FullPipelineTab
 from .accounts_tab_extended import AccountsTabExtended
 from ..core.models import Task
 from ..core.regions import load_regions
@@ -1487,11 +1488,13 @@ class MainWindow(QMainWindow):
         self.prep_tab = PhrasePrepTab(collect_tab=self.collect_tab, deep_tab=self.deep_tab)
 
         self.turbo_tab = TurboParserTab()
+        self.full_pipeline_tab = FullPipelineTab()
         
         tabs = QTabWidget()
         tabs.addTab(self.accounts_tab, "Аккаунты")
         tabs.addTab(self.prep_tab, "Подготовка фраз")
         tabs.addTab(self.turbo_tab, "⚡ Турбо Парсер")
+        tabs.addTab(self.full_pipeline_tab, "🚀 Full Pipeline")
         tabs.addTab(self.collect_tab, "Сбор частотности")
         tabs.addTab(self.results_tab, "Результаты частотности")
         tabs.addTab(self.deep_tab, "Парсинг вглубь")
