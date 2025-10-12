@@ -1,4 +1,5 @@
 @echo off
-cd /d C:\AI\yandex\semtool
-python -m semtool.app.main
+echo Starting SemTool...
+cd /d C:\AI\yandex
+"C:\AI\.venv\Scripts\python.exe" -m semtool.app.main
 pause
