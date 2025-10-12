@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Iterable
 
 from sqlalchemy import select, func
 
-from ..core.db import SessionLocal
+from ..core.db import SessionLocal, get_db_connection
 from ..core.models import FrequencyResult
 
 QUEUE_STATUSES = ("queued", "running", "ok", "error")
@@ -80,3 +81,120 @@ def clear_results() -> None:
     with SessionLocal() as session:
         session.query(FrequencyResult).delete()
         session.commit()
+
+
+# ============================================================================
+# TURBO PARSER: Batch Wordstat parsing for pipeline
+# ============================================================================
+
+async def parse_batch_wordstat(
+    masks: list[str], 
+    session_page=None, 
+    chunk_size: int = 80, 
+    region: int = 225
+) -> list[dict]:
+    """
+    Parse frequency from Wordstat using Playwright in batch mode.
+    
+    Args:
+        masks: List of search phrases to parse
+        session_page: Playwright page with active session (from autologin)
+        chunk_size: Number of masks per batch (Yandex limit: ~80/min)
+        region: Yandex region ID (default 225 = Russia)
+    
+    Returns:
+        List of dicts: [{'phrase': str, 'freq': int, 'region': int}, ...]
+    """
+    results = []
+    
+    # Import playwright only when needed
+    from playwright.async_api import async_playwright
+    
+    # If no session provided, create temporary browser
+    own_browser = session_page is None
+    if own_browser:
+        playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+        session_page = await context.new_page()
+        await session_page.goto("https://wordstat.yandex.ru/")
+    
+    try:
+        for i in range(0, len(masks), chunk_size):
+            batch = masks[i:i + chunk_size]
+            
+            for mask in batch:
+                try:
+                    # Navigate to Wordstat with phrase
+                    url = f"https://wordstat.yandex.ru/#!/?words={mask}&regions={region}"
+                    await session_page.goto(url, timeout=15000)
+                    
+                    # Wait for results to load
+                    await session_page.wait_for_selector(
+                        "[data-auto='phrase-count-total'], .b-phrase-count",
+                        timeout=10000
+                    )
+                    
+                    # Try to click "Show statistics" if exists
+                    try:
+                        show_btn = session_page.locator("text=Показать статистику")
+                        if await show_btn.count() > 0:
+                            await show_btn.first.click(timeout=3000)
+                            await asyncio.sleep(1)
+                    except:
+                        pass  # Button might not exist
+                    
+                    # Extract frequency number
+                    freq_element = session_page.locator(
+                        "[data-auto='phrase-count-total'], .b-phrase-count__total"
+                    )
+                    freq_text = await freq_element.first.inner_text(timeout=5000)
+                    
+                    # Parse number from text (remove spaces, commas)
+                    freq = int(''.join(filter(str.isdigit, freq_text)))
+                    
+                    result = {'phrase': mask, 'freq': freq, 'region': region}
+                    results.append(result)
+                    
+                    # Save to DB immediately (for progress tracking)
+                    with get_db_connection() as conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO frequencies (phrase, freq, region, processed) VALUES (?, ?, ?, 0)",
+                            (mask, freq, region)
+                        )
+                    
+                    # Rate limiting: ~1 req/sec = 60/min
+                    await asyncio.sleep(1.0)
+                    
+                    print(f"[Wordstat] {mask}: {freq:,}")
+                    
+                except Exception as e:
+                    print(f"[Wordstat ERROR] {mask}: {e}")
+                    results.append({'phrase': mask, 'freq': 0, 'region': region})
+            
+            # Longer pause between batches
+            if i + chunk_size < len(masks):
+                await asyncio.sleep(3)
+    
+    finally:
+        if own_browser:
+            await context.close()
+            await browser.close()
+            await playwright.stop()
+    
+    return results
+
+
+async def get_saved_frequencies(region: int = 225) -> list[dict]:
+    """Get all saved frequency results from database."""
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            "SELECT phrase, freq, region FROM frequencies WHERE region = ? ORDER BY freq DESC",
+            (region,)
+        )
+        return [
+            {'phrase': row[0], 'freq': row[1], 'region': row[2]}
+            for row in cursor.fetchall()
+        ]
