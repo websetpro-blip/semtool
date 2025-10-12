@@ -51,6 +51,7 @@ from ..core.db import Base, engine, ensure_schema, SessionLocal
 from .turbo_tab_qt import TurboParserTab
 from .full_pipeline_tab import FullPipelineTab
 from .accounts_tab_extended import AccountsTabExtended
+from .keys_panel import KeysPanel
 from ..core.models import Task
 from ..core.regions import load_regions
 
@@ -985,6 +986,8 @@ class TasksTab(QWidget):
 
 
 class FrequencyResultsTab(QWidget):
+    results_updated = Signal()  # Сигнал при обновлении результатов
+    
     def __init__(self) -> None:
         super().__init__()
         self.status_filter = QComboBox()
@@ -1070,6 +1073,9 @@ class FrequencyResultsTab(QWidget):
                 if col_idx in (1, 3, 4, 5):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_idx, col_idx, item)
+        
+        # Сигнализируем об обновлении результатов
+        self.results_updated.emit()
 
     def open_csv(self) -> None:
         results_dir = Path('results')
@@ -1500,13 +1506,51 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.deep_tab, "Парсинг вглубь")
         tabs.addTab(self.tasks_tab, "История задач")
 
-        central = QWidget()
-        layout = QVBoxLayout(central)
-        layout.addWidget(tabs)
-        layout.addWidget(QLabel("Журнал задач"))
-        layout.addWidget(self.log_widget)
+        # Создаем правую панель с ключами (как в Key Collector)
+        self.keys_panel = KeysPanel()
+        
+        # Левая часть - вкладки + лог
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.addWidget(tabs)
+        left_layout.addWidget(QLabel("Журнал задач"))
+        left_layout.addWidget(self.log_widget)
+        
+        # QSplitter: слева вкладки, справа панель ключей
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(left_widget)
+        splitter.addWidget(self.keys_panel)
+        splitter.setSizes([700, 300])  # 70% слева, 30% справа
+        splitter.setStretchFactor(0, 7)  # Левая часть растягивается больше
+        splitter.setStretchFactor(1, 3)  # Правая часть меньше
 
-        self.setCentralWidget(central)
+        self.setCentralWidget(splitter)
+        
+        # Подключаем обновление панели ключей при изменении результатов
+        self.results_tab.results_updated.connect(self._update_keys_panel)
+    
+    def _update_keys_panel(self):
+        """Обновить панель ключей из результатов"""
+        try:
+            from ..services import frequency as frequency_service
+            results = frequency_service.list_results(status=None, limit=1000)
+            
+            # Преобразуем для панели ключей
+            data = []
+            for r in results:
+                data.append({
+                    'phrase': r['mask'],
+                    'freq_total': r['freq_total'],
+                    'freq_quotes': 0,  # TODO: добавить когда будет в БД
+                    'freq_exact': r['freq_exact'],
+                    'status': r['status'],
+                    'group': ''  # TODO: добавить группировку
+                })
+            
+            self.keys_panel.load_data(data)
+        except Exception as e:
+            print(f"[ERROR] Ошибка обновления панели ключей: {e}")
 
 
 def main() -> None:
