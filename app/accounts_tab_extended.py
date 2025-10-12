@@ -392,6 +392,23 @@ class AccountsTabExtended(QWidget):
         """)
         buttons_layout.addWidget(self.test_proxy_btn)
         
+        # Кнопка проверки баланса капчи
+        self.check_captcha_btn = QPushButton("🎫 Баланс капчи")
+        self.check_captcha_btn.clicked.connect(self.check_captcha_balance)
+        self.check_captcha_btn.setToolTip("Проверить баланс RuCaptcha")
+        self.check_captcha_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5722;
+                color: white;
+                font-weight: bold;
+                padding: 5px 15px;
+            }
+            QPushButton:hover {
+                background-color: #E64A19;
+            }
+        """)
+        buttons_layout.addWidget(self.check_captcha_btn)
+        
         layout.addLayout(buttons_layout)
         
         # Панель управления браузерами
@@ -889,6 +906,71 @@ class AccountsTabExtended(QWidget):
             msg += f"Задержка: {result['latency_ms']} мс"
             QMessageBox.warning(self, "Результат проверки", msg)
             self.log_action(f"Прокси {account.proxy} НЕ работает: {result['error']}")
+    
+    def check_captcha_balance(self):
+        """Проверить баланс RuCaptcha"""
+        # Пока используем общий ключ из файла
+        # TODO: В будущем брать ключ из поля captcha_key аккаунта
+        CAPTCHA_KEY = "8f00b4cb9b77d982abb77260a168f976"
+        
+        from ..services.captcha import RuCaptchaClient
+        import asyncio
+        
+        # Создаем диалог прогресса
+        progress_dialog = QMessageBox(self)
+        progress_dialog.setWindowTitle("Проверка баланса капчи")
+        progress_dialog.setText("Проверка баланса RuCaptcha...\n\nОжидайте...")
+        progress_dialog.setStandardButtons(QMessageBox.NoButton)
+        progress_dialog.setModal(True)
+        progress_dialog.show()
+        
+        # Запускаем проверку в отдельном потоке
+        def run_check():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            client = RuCaptchaClient(CAPTCHA_KEY)
+            result = loop.run_until_complete(client.get_balance())
+            loop.close()
+            return result
+        
+        from threading import Thread
+        result_container = {}
+        
+        def check_thread():
+            result_container['result'] = run_check()
+        
+        thread = Thread(target=check_thread)
+        thread.start()
+        thread.join(timeout=15)
+        
+        progress_dialog.close()
+        
+        # Показываем результат
+        if 'result' not in result_container:
+            QMessageBox.warning(self, "Ошибка", "Проверка баланса заняла слишком много времени (>15 сек)")
+            return
+        
+        result = result_container['result']
+        
+        if result['ok']:
+            balance = result['balance']
+            msg = f"✅ RuCaptcha баланс\n\n"
+            msg += f"Ключ: {CAPTCHA_KEY[:20]}...\n"
+            msg += f"Баланс: {balance:.2f} руб\n\n"
+            
+            # Прикинем сколько капч можно решить
+            price_per_captcha = 0.10  # примерно 10 копеек за капчу
+            captchas_available = int(balance / price_per_captcha)
+            msg += f"Примерно {captchas_available} капч можно решить"
+            
+            QMessageBox.information(self, "Баланс капчи", msg)
+            self.log_action(f"RuCaptcha баланс: {balance:.2f} руб (~{captchas_available} капч)")
+        else:
+            msg = f"❌ Ошибка проверки баланса!\n\n"
+            msg += f"Ключ: {CAPTCHA_KEY[:20]}...\n"
+            msg += f"Ошибка: {result['error']}"
+            QMessageBox.warning(self, "Ошибка капчи", msg)
+            self.log_action(f"RuCaptcha ошибка: {result['error']}")
     
     def login_selected(self):
         """Открыть Chrome с CDP для ручного логина"""
