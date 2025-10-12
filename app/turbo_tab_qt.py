@@ -104,22 +104,57 @@ class ParserWorkerThread(QThread):
         message = ""
         
         try:
-            self.log_message.emit("Загрузка масок...")
+            # ВАЖНО: Используем турбо-парсер с аккаунтами из базы!
+            from ..workers.turbo_parser_integration import TurboWordstatParser
+            from ..services import accounts as account_service
             
-            # Парсинг частотности
+            # Получаем первый рабочий аккаунт из базы
+            all_accounts = account_service.list_accounts()
+            active_accounts = [a for a in all_accounts if a.status == 'ok']
+            
+            if not active_accounts:
+                self.error_signal.emit("Нет активных аккаунтов в базе!")
+                return
+            
+            # Используем первый активный аккаунт
+            account = active_accounts[0]
+            self.log_message.emit(f"Используем аккаунт: {account.name}")
+            
+            # Создаём турбо-парсер с аккаунтом
+            parser = TurboWordstatParser(
+                account=account,
+                headless=False,  # Видимый режим
+                visual_mode=False
+            )
+            
+            # Запускаем парсинг через турбо-парсер
+            self.log_message.emit("Инициализация браузера...")
+            loop.run_until_complete(parser.init_browser())
+            
+            self.log_message.emit("Настройка вкладок...")
+            loop.run_until_complete(parser.setup_tabs())
+            
             self.log_message.emit("Парсинг частотности...")
-            freq_results = loop.run_until_complete(parse_frequency(self.queries))
+            freq_results = loop.run_until_complete(parser.parse_batch(self.queries))
             self.log_message.emit(f"Частотность: {len(freq_results)} фраз")
             
-            # Парсинг прогнозов Direct
-            self.log_message.emit("Парсинг прогнозов Direct...")
-            direct_results = loop.run_until_complete(parse_direct_forecast(freq_results))
-            self.log_message.emit("Прогнозы получены")
+            # Закрываем парсер
+            loop.run_until_complete(parser.close())
             
-            # Кластеризация
-            self.log_message.emit("Кластеризация результатов...")
-            clustered = cluster_results(direct_results)
-            self.log_message.emit(f"Кластеризовано: {len(clustered)} групп")
+            # Результаты уже получены от турбо-парсера
+            # freq_results содержит данные вида: [{'query': str, 'frequency': int, 'timestamp': str}, ...]
+            
+            # Преобразуем для совместимости
+            clustered = []
+            for r in freq_results:
+                clustered.append({
+                    'phrase': r.get('query', ''),
+                    'freq': r.get('frequency', 0),
+                    'region': 225,
+                    'timestamp': r.get('timestamp', '')
+                })
+            
+            self.log_message.emit(f"Получено результатов: {len(clustered)}")
             
             # Экспорт в CSV
             csv_path = Path("data") / "results.csv"
