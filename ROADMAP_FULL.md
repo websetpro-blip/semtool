@@ -375,7 +375,7 @@ playwright install chromium
 
 ### 2. Запуск UI:
 ```bash
-python -m yandex.semtool.app.main
+python -m semtool.app.main
 ```
 
 ### 3. Первый запуск:

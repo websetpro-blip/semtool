@@ -4,7 +4,12 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional
 
-DB_PATH = Path(__file__).resolve().parent / "data" / "semtool.db"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+if not DATA_DIR.exists():
+    DATA_DIR = BASE_DIR.parent / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "semtool.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
@@ -20,9 +25,11 @@ CREATE TABLE IF NOT EXISTS accounts (
 """
 
 def get_conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, isolation_level=None)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.executescript(SCHEMA)
     return conn
 
 def init_db() -> None:

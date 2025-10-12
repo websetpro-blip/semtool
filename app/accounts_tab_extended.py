@@ -9,6 +9,7 @@
 
 import asyncio
 import threading
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -44,35 +45,47 @@ class AutoLoginThread(QThread):
         self.secret_answer = answer
         
     def run(self):
-        """Запуск умного автологина на основе решения GPT"""
+        """Р—Р°РїСѓСЃРє СѓРјРЅРѕРіРѕ Р°РІС‚РѕР»РѕРіРёРЅР° РЅР° РѕСЃРЅРѕРІРµ СЂРµС€РµРЅРёСЏ GPT"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._run_async())
+        except Exception as exc:
+            self.status_signal.emit(f"[ERROR] {exc}")
+            self.status_signal.emit(traceback.format_exc())
+            self.finished_signal.emit(False, str(exc))
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            loop.close()
+
+    async def _run_async(self):
         from ..workers.yandex_smart_login import YandexSmartLogin
-        import asyncio
         import json
         from pathlib import Path
-        
-        # Берем профиль ИЗ БАЗЫ ДАННЫХ, а не создаем новый
+
         profile_path = self.account.profile_path
-        
-        # ⚠️ ПРОВЕРКА: Профиль ДОЛЖЕН быть из БД!
+
+        # вљ пёЏ РџР РћР’Р•Р РљРђ: РџСЂРѕС„РёР»СЊ Р”РћР›Р¶РµРќ Р±С‹С‚СЊ РёР· Р‘Р”!
         if not profile_path:
-            self.status_signal.emit(f"[ERROR] У аккаунта {self.account.name} НЕТ profile_path в БД!")
-            self.finished_signal.emit(False, "Профиль не указан в БД")
+            self.status_signal.emit(f"[ERROR] РЈ Р°РєРєР°СѓРЅС‚Р° {self.account.name} РќР•Рў profile_path РІ Р‘Р”!")
+            self.finished_signal.emit(False, "РџСЂРѕС„РёР»СЊ РЅРµ СѓРєР°Р·Р°РЅ РІ Р‘Р”")
             return
-        
-        self.status_signal.emit(f"[OK] Профиль из БД: {profile_path}")
-        
-        # Если путь относительный - делаем полным
+
+        self.status_signal.emit(f"[OK] РџСЂРѕС„РёР»СЊ РёР· Р‘Р]: {profile_path}")
+
         if not profile_path.startswith("C:"):
             profile_path = f"C:/AI/yandex/{profile_path}"
-            self.status_signal.emit(f"[INFO] Путь преобразован: {profile_path}")
-        
-        # Загружаем логин и пароль из accounts.json
+            self.status_signal.emit(f"[INFO] РџСѓС‚СЊ РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅ: {profile_path}")
+
         accounts_file = Path("C:/AI/yandex/configs/accounts.json")
         if not accounts_file.exists():
-            self.status_signal.emit(f"[ERROR] Файл accounts.json не найден!")
-            self.finished_signal.emit(False, "Файл accounts.json не найден")
+            self.status_signal.emit(f"[ERROR] Р¤Р°Р№Р» accounts.json РЅРµ РЅР°Р№РґРµРЅ!")
+            self.finished_signal.emit(False, "Р¤Р°Р№Р» accounts.json РЅРµ РЅР°Р№РґРµРЅ")
             return
-        
+
         with open(accounts_file, 'r', encoding='utf-8') as f:
             accounts_data = json.load(f)
             account_info = None
@@ -80,65 +93,47 @@ class AutoLoginThread(QThread):
                 if acc["login"] == self.account.name:
                     account_info = acc
                     break
-        
+
         if not account_info:
-            self.status_signal.emit(f"[ERROR] Аккаунт {self.account.name} не найден в accounts.json!")
-            self.finished_signal.emit(False, f"Аккаунт не найден в accounts.json")
+            self.status_signal.emit(f"[ERROR] РђРєРєР°СѓРЅС‚ {self.account.name} РЅРµ РЅР°Р№РґРµРЅ РІ accounts.json!")
+            self.finished_signal.emit(False, f"РђРєРєР°СѓРЅС‚ РЅРµ РЅР°Р№РґРµРЅ РІ accounts.json")
             return
-        
-        self.status_signal.emit(f"[CDP] Запуск автологина для {self.account.name}...")
-        
-        # Получаем secret_answer из accounts.json если есть
-        secret_answer = self.secret_answer  # Пользователь мог ввести вручную
+
+        self.status_signal.emit(f"[CDP] Р—Р°РїСѓСЃРє Р°РІС‚РѕР»РѕРіРёРЅР° РґР»СЏ {self.account.name}...")
+
+        secret_answer = self.secret_answer
         if not secret_answer and "secret" in account_info and account_info["secret"]:
             secret_answer = account_info["secret"]
-            self.status_signal.emit(f"[CDP] Найден сохраненный ответ на секретный вопрос")
-        
-        # Используем РАЗНЫЕ порты для разных аккаунтов!
-        # Генерируем порт на основе хеша имени аккаунта
+            self.status_signal.emit(f"[CDP] РќР°Р№РґРµРЅ СЃРѕС…СЂР°РЅРµРЅРЅС‹Р№ РѕС‚РІРµС‚ РЅР° СЃРµРєСЂРµС‚РЅС‹Р№ РІРѕРїСЂРѕСЃ")
+
         port = 9222 + (hash(self.account.name) % 100)
-        self.status_signal.emit(f"[CDP] Используется порт {port} для {self.account.name}")
-        
-        # Создаем умный автологин
+        self.status_signal.emit(f"[CDP] РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РїРѕСЂС‚ {port} РґР»СЏ {self.account.name}")
+
         smart_login = YandexSmartLogin()
-        
-        # Подключаем сигналы для отправки статусов
         smart_login.status_update.connect(self.status_signal.emit)
         smart_login.progress_update.connect(self.progress_signal.emit)
         smart_login.secret_question_required.connect(self.secret_question_signal.emit)
-        
-        # Если есть ответ от пользователя - устанавливаем
-        if self.secret_answer:
-            smart_login.set_secret_answer(self.secret_answer)
-        
-        # Получаем прокси из accounts.json
+
+        if secret_answer:
+            smart_login.set_secret_answer(secret_answer)
+
         proxy_to_use = account_info.get("proxy", None)
         if proxy_to_use:
-            self.status_signal.emit(f"[INFO] Используется прокси: {proxy_to_use.split('@')[0]}@***")
-        
-        # Запускаем умный автологин
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            self.status_signal.emit(f"[SMART] Запускаю автологин...")
-            success = loop.run_until_complete(smart_login.login(
-                account_name=self.account.name,
-                profile_path=profile_path,
-                proxy=proxy_to_use  # Используем прокси из accounts.json!
-            ))
-            
-            if success:
-                self.status_signal.emit(f"[OK] Автологин успешен для {self.account.name}!")
-                self.finished_signal.emit(True, "Авторизация успешна")
-            else:
-                self.status_signal.emit(f"[ERROR] Автологин не удался для {self.account.name}")
-                self.finished_signal.emit(False, "Ошибка авторизации")
-                
-        except Exception as e:
-            self.status_signal.emit(f"[ERROR] {e}")
-            self.finished_signal.emit(False, str(e))
-        finally:
-            loop.close()
+            self.status_signal.emit(f"[INFO] РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РїСЂРѕРєСЃРё: {proxy_to_use.split('@')[0]}@***")
+
+        self.status_signal.emit(f"[SMART] Р—Р°РїСѓСЃРєР°СЋ Р°РІС‚РѕР»РѕРіРёРЅ...")
+        success = await smart_login.login(
+            account_name=self.account.name,
+            profile_path=profile_path,
+            proxy=proxy_to_use
+        )
+
+        if success:
+            self.status_signal.emit(f"[OK] РђРІС‚РѕР»РѕРіРёРЅ СѓСЃРїРµС€РµРЅ РґР»СЏ {self.account.name}!")
+            self.finished_signal.emit(True, "РђРІС‚РѕСЂРёР·Р°С†РёСЏ СѓСЃРїРµС€РЅР°")
+        else:
+            self.status_signal.emit(f"[ERROR] РђРІС‚РѕР»РѕРіРёРЅ РЅРµ СѓРґР°Р»СЃСЏ РґР»СЏ {self.account.name}")
+            self.finished_signal.emit(False, "РћС€РёР±РєР° Р°РІС‚РѕСЂРёР·Р°С†РёРё")
 
 
 class LoginWorkerThread(QThread):
@@ -158,15 +153,20 @@ class LoginWorkerThread(QThread):
         """Запуск логина в отдельном потоке"""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
         try:
-            loop.run_until_complete(self.login_accounts())
-        except Exception as e:
-            self.finished_signal.emit(False, str(e))
+            loop.run_until_complete(self._run_async())
+        except Exception as exc:
+            self.progress_signal.emit(f"[ERROR] {exc}")
+            self.progress_signal.emit(traceback.format_exc())
+            self.finished_signal.emit(False, str(exc))
         finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
             loop.close()
     
-    async def login_accounts(self):
+    async def _run_async(self):
         """Логин в аккаунты"""
         from ..workers.auth_checker import AuthChecker
         
@@ -1459,3 +1459,4 @@ class AccountsTabExtended(QWidget):
                     return f"{status} ({size_kb:.1f}KB)"
         
         return "No cookies"
+

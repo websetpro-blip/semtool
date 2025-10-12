@@ -4,6 +4,7 @@ UI вкладка для управления браузерными сесси�
 from __future__ import annotations
 
 import asyncio
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -37,28 +38,30 @@ class SessionCreationThread(QThread):
         self.proxy = proxy
     
     def run(self) -> None:
+        self.log_message.emit(f"Открываю браузер для логина (аккаунт #{self.account_id})...")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            self.log_message.emit(f"Открываю браузер для логина (аккаунт #{self.account_id})...")
-            
-            # Запускаем асинхронную функцию в отдельном event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            profile_path = loop.run_until_complete(
-                session_service.create_session_for_account(
-                    self.account_id,
-                    self.proxy
-                )
-            )
-            
-            loop.close()
-            
-            self.log_message.emit(f"✓ Сессия создана: {profile_path}")
-            self.completed.emit(True, f"Сессия сохранена в {profile_path}")
-        
+            profile_path = loop.run_until_complete(self._run_async())
         except Exception as exc:
             self.log_message.emit(f"✗ Ошибка: {exc}")
+            self.log_message.emit(traceback.format_exc())
             self.completed.emit(False, str(exc))
+        else:
+            self.log_message.emit(f"✓ Сессия создана: {profile_path}")
+            self.completed.emit(True, f"Сессия сохранена в {profile_path}")
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            loop.close()
+
+    async def _run_async(self) -> str:
+        return await session_service.create_session_for_account(
+            self.account_id,
+            self.proxy
+        )
 
 
 class SessionCheckThread(QThread):
@@ -73,13 +76,20 @@ class SessionCheckThread(QThread):
     def run(self) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
-        result = loop.run_until_complete(
-            session_service.check_session_status(self.profile_path)
-        )
-        
-        loop.close()
-        self.completed.emit(result)
+        try:
+            result = loop.run_until_complete(
+                session_service.check_session_status(self.profile_path)
+            )
+        except Exception as exc:
+            self.completed.emit({"error": str(exc), "traceback": traceback.format_exc()})
+        else:
+            self.completed.emit(result)
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            loop.close()
 
 
 class SessionsTab(QWidget):

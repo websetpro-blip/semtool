@@ -5,7 +5,7 @@
 ### ШАГ 1: Запуск (30 сек)
 ```bash
 cd C:\AI\yandex
-python -m yandex.semtool.app.main
+python -m semtool.app.main
 ```
 
 ### ШАГ 2: Добавить аккаунт (1 мин)

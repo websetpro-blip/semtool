@@ -1,10 +1,11 @@
-"""
+﻿"""
 ТУРБО ПАРСЕР TAB - GUI вкладка для турбо парсинга (PySide6)
 Интерфейс как в DirectParser с таблицей логов
 """
 
 import asyncio
 import time
+import traceback
 from pathlib import Path
 from datetime import datetime
 import json
@@ -26,9 +27,7 @@ from ..workers.turbo_parser_integration import TurboWordstatParser
 class ParserWorkerThread(QThread):
     """Поток для выполнения парсинга"""
     log_signal = Signal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
-    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
-    finished_signal = Signal(bool, str)  # успех, сообщение
-    
+    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время\r\n    log_message = Signal(str)  # Короткие уведомления в UI\r\n    error_signal = Signal(str)  # Текст ошибки для отображения\r\n    finished_signal = Signal(bool, str)  # успех, сообщение\r\n    
     def __init__(self, queries, account, headless, mode, visual_mode=True, num_browsers=3):
         super().__init__()
         self.queries = queries
@@ -42,22 +41,34 @@ class ParserWorkerThread(QThread):
         
     def run(self):
         """Запуск парсинга в отдельном потоке"""
+        self.log_message.emit(f"Старт парсинга: {len(self.queries)} фраз")
         self.start_time = time.time()
-        
-        # Создаем новый event loop для потока
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+        success = False
+        message = ""
         try:
-            # Запускаем асинхронный парсер
-            results = loop.run_until_complete(self.run_parser_async())
-            self.finished_signal.emit(True, f"Обработано {len(results)} фраз")
-        except Exception as e:
-            self.finished_signal.emit(False, str(e))
+            results = loop.run_until_complete(self._run_async())
+            message = f"Обработано {len(results)} фраз"
+            success = True
+        except Exception as exc:
+            message = str(exc)
+            self.log_message.emit(f"Ошибка: {exc}")
+            self.log_message.emit(traceback.format_exc())
+            self.error_signal.emit(str(exc))
         finally:
+            duration = 0.0
+            if self.start_time:
+                duration = time.time() - self.start_time
+            self.log_message.emit(f"Время выполнения: {duration:.1f} с")
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
             loop.close()
+            self.finished_signal.emit(success, message or "Парсинг завершён")
     
-    async def run_parser_async(self):
+    async def _run_async(self):
         """Асинхронный запуск парсера"""
         self.parser = TurboWordstatParser(
             account=self.account, 
@@ -79,23 +90,37 @@ class ParserWorkerThread(QThread):
         
         try:
             results = await self.parser.parse_batch(self.queries)
-            
-            # Отправляем логи в GUI
+
+            elapsed = max(time.time() - (self.start_time or time.time()), 1e-6)
+            processed = len(results)
+            errors = 0
+            if isinstance(results, list):
+                errors = sum(1 for item in results if isinstance(item, dict) and item.get("error"))
+            success_count = processed - errors
+            speed_per_min = processed / elapsed * 60 if elapsed > 0 else 0
+
             for result in results:
-                elapsed = time.time() - self.start_time
-                speed = len(results) / elapsed * 60 if elapsed > 0 else 0
-                
+                query = result.get("query", "") if isinstance(result, dict) else str(result)
+                freq_value = 0
+                if isinstance(result, dict):
+                    freq_value = result.get("frequency") or 0
+                formatted_freq = (
+                    f"{int(freq_value):,}" if isinstance(freq_value, (int, float)) else str(freq_value)
+                )
+                status = result.get("status", "✓") if isinstance(result, dict) else "✓"
                 self.log_signal.emit(
                     datetime.now().strftime("%H:%M:%S"),
                     self.account.name if self.account else "default",
-                    result['query'],
-                    f"{result['frequency']:,}",
-                    "✓",
-                    f"{speed:.1f}"
+                    query,
+                    formatted_freq,
+                    status,
+                    f"{speed_per_min:.1f}"
                 )
-                
+
+            self.stats_signal.emit(processed, success_count, errors, speed_per_min, elapsed)
+            self.log_message.emit("Парсинг завершён.")
             return results
-            
+
         finally:
             if self.parser:
                 await self.parser.close()
@@ -388,6 +413,28 @@ class TurboParserTab(QWidget):
         """Обработчик получения лога от воркера"""
         self.add_log(time_str, account, phrase, frequency, status, speed)
     
+    def on_worker_log_message(self, message: str) -> None:
+        """Простой текстовый лог от фонового потока"""
+        self.add_log(
+            datetime.now().strftime("%H:%M:%S"),
+            "",
+            message,
+            "",
+            "ℹ️",
+            ""
+        )
+    
+    def on_worker_error(self, message: str) -> None:
+        """Сообщение об ошибке от фонового потока"""
+        self.add_log(
+            datetime.now().strftime("%H:%M:%S"),
+            "",
+            message,
+            "",
+            "Ошибка",
+            ""
+        )
+    
     def on_stats_received(self, processed, success, errors, speed, elapsed):
         """Обработчик получения статистики от воркера"""
         self.update_stats(processed, success, errors, speed, elapsed)
@@ -456,6 +503,8 @@ class TurboParserTab(QWidget):
         
         # Подключаем сигналы
         self.worker_thread.log_signal.connect(self.on_log_received)
+        self.worker_thread.log_message.connect(self.on_worker_log_message)
+        self.worker_thread.error_signal.connect(self.on_worker_error)
         self.worker_thread.stats_signal.connect(self.on_stats_received)
         self.worker_thread.finished_signal.connect(self.on_finished)
         
@@ -520,3 +569,4 @@ class TurboParserTab(QWidget):
                         ])
             
             QMessageBox.information(self, "Готово", f"Результаты экспортированы в {filename}")
+
