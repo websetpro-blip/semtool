@@ -1545,7 +1545,7 @@ class MainWindow(QMainWindow):
                     'freq_quotes': r.get('freq_quotes', 0),  # Частотность в кавычках ("WS")
                     'freq_exact': r['freq_exact'],
                     'status': r['status'],
-                    'group': ''  # TODO: добавить группировку в Этапе 5
+                    'group': r.get('group', '') or ''  # Группа из БД
                 })
             
             self.keys_panel.load_data(data)

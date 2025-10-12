@@ -61,6 +61,7 @@ def list_results(status: str | None = None, limit: int = 500) -> list[dict]:
                 'freq_total': row.freq_total,
                 'freq_quotes': getattr(row, 'freq_quotes', 0),  # С поддержкой старых БД
                 'freq_exact': row.freq_exact,
+                'group': getattr(row, 'group', ''),  # Группа для организации
                 'attempts': row.attempts,
                 'error': row.error or '',
                 'updated_at': row.updated_at,
@@ -77,6 +78,28 @@ def counts_by_status() -> dict[str, int]:
         for status, value in rows:
             counts[status] = value
         return counts
+
+
+def update_group(phrase_ids: list[int], group_name: str) -> int:
+    """Обновить группу для выбранных фраз"""
+    with SessionLocal() as session:
+        stmt = select(FrequencyResult).where(FrequencyResult.id.in_(phrase_ids))
+        results = session.scalars(stmt).all()
+        
+        for result in results:
+            result.group = group_name
+            result.updated_at = datetime.utcnow()
+        
+        session.commit()
+        return len(results)
+
+
+def get_all_groups() -> list[str]:
+    """Получить список всех уникальных групп"""
+    with SessionLocal() as session:
+        stmt = select(FrequencyResult.group).distinct().where(FrequencyResult.group.isnot(None))
+        groups = session.scalars(stmt).all()
+        return [g for g in groups if g]
 
 
 def clear_results() -> None:

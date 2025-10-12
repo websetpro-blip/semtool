@@ -105,6 +105,12 @@ class KeysPanel(QWidget):
         # Панель действий
         actions_layout = QHBoxLayout()
         
+        # Группировка
+        group_btn = QPushButton("📁 Создать группу")
+        group_btn.setToolTip("Назначить группу выбранным фразам")
+        group_btn.clicked.connect(self._create_group)
+        actions_layout.addWidget(group_btn)
+        
         export_btn = QPushButton("📥 Экспорт")
         export_btn.setToolTip("Экспортировать в CSV")
         export_btn.clicked.connect(self._export_to_csv)
@@ -296,6 +302,67 @@ class KeysPanel(QWidget):
                 QMessageBox.information(self, "Экспорт", f"Экспортировано {len(self._filtered_data)} фраз в {filename}")
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка экспорта", str(e))
+    
+    def _create_group(self):
+        """Создать/назначить группу выбранным фразам"""
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+        
+        selected_rows = set()
+        for item in self.table.selectedItems():
+            selected_rows.add(item.row())
+        
+        if not selected_rows:
+            QMessageBox.warning(self, "Группировка", "Выберите фразы для группировки")
+            return
+        
+        # Получаем список существующих групп
+        from ..services import frequency as frequency_service
+        existing_groups = frequency_service.get_all_groups()
+        
+        # Диалог для ввода/выбора группы
+        group_name, ok = QInputDialog.getItem(
+            self,
+            "Создать группу",
+            "Название группы:",
+            existing_groups + ["<Новая группа>"],
+            0,
+            True  # Editable
+        )
+        
+        if ok and group_name:
+            # Если выбрали "<Новая группа>", просим ввести имя
+            if group_name == "<Новая группа>":
+                group_name, ok = QInputDialog.getText(
+                    self,
+                    "Новая группа",
+                    "Введите название новой группы:"
+                )
+                if not ok or not group_name:
+                    return
+            
+            # Получаем ID выбранных фраз
+            phrase_ids = []
+            for row in selected_rows:
+                if 0 <= row < len(self._filtered_data):
+                    # TODO: Нужен способ получить ID фразы
+                    # Пока используем mask как идентификатор
+                    pass
+            
+            # Обновляем группу в БД
+            # TODO: Нужно передавать ID фраз, а не mask
+            # Пока просто обновим локальные данные
+            for row in selected_rows:
+                if 0 <= row < len(self._filtered_data):
+                    self._filtered_data[row]['group'] = group_name
+            
+            # Перерисовываем таблицу
+            self._render_table()
+            
+            QMessageBox.information(
+                self,
+                "Группировка",
+                f"Назначена группа '{group_name}' для {len(selected_rows)} фраз"
+            )
     
     def clear(self):
         """Очистить панель"""

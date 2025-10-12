@@ -69,6 +69,7 @@ class FrequencyResult(Base):
     freq_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="Широкая частотность (WS)")
     freq_quotes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="Частотность в кавычках (\"WS\")")
     freq_exact: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="Точная частотность (!WS)")
+    group: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="Группа для организации ключей")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
