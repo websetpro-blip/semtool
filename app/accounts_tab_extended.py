@@ -371,6 +371,27 @@ class AccountsTabExtended(QWidget):
         self.refresh_btn.clicked.connect(self.refresh)
         buttons_layout.addWidget(self.refresh_btn)
         
+        # Кнопка тест прокси
+        self.test_proxy_btn = QPushButton("🔌 Тест прокси")
+        self.test_proxy_btn.clicked.connect(self.test_proxy_selected)
+        self.test_proxy_btn.setEnabled(False)
+        self.test_proxy_btn.setToolTip("Проверить прокси выбранного аккаунта")
+        self.test_proxy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                font-weight: bold;
+                padding: 5px 15px;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        buttons_layout.addWidget(self.test_proxy_btn)
+        
         layout.addLayout(buttons_layout)
         
         # Панель управления браузерами
@@ -521,6 +542,8 @@ class AccountsTabExtended(QWidget):
         self.login_btn.setEnabled(len(selected_rows) > 0)
         # Автологин работает только для одного выбранного аккаунта
         self.auto_login_btn.setEnabled(len(selected_rows) == 1)
+        # Тест прокси работает только для одного выбранного аккаунта
+        self.test_proxy_btn.setEnabled(len(selected_rows) == 1)
     
     def refresh(self):
         """Обновить таблицу аккаунтов"""
@@ -799,6 +822,73 @@ class AccountsTabExtended(QWidget):
                 QMessageBox.information(self, "Импорт", "Функция в разработке")
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка импорта", str(e))
+    
+    def test_proxy_selected(self):
+        """Проверить прокси выбранного аккаунта"""
+        account = self._current_account()
+        if not account:
+            QMessageBox.warning(self, "Внимание", "Выберите аккаунт для проверки прокси")
+            return
+        
+        if not account.proxy:
+            QMessageBox.warning(self, "Внимание", f"У аккаунта {account.name} не указан прокси")
+            return
+        
+        # Импортируем сервис проверки прокси
+        from ..services.proxy_check import test_proxy
+        import asyncio
+        
+        # Создаем диалог прогресса
+        progress_dialog = QMessageBox(self)
+        progress_dialog.setWindowTitle("Проверка прокси")
+        progress_dialog.setText(f"Проверка прокси для аккаунта {account.name}...\n\n{account.proxy}")
+        progress_dialog.setStandardButtons(QMessageBox.NoButton)
+        progress_dialog.setModal(True)
+        progress_dialog.show()
+        
+        # Запускаем проверку в отдельном потоке
+        def run_test():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(test_proxy(account.proxy))
+            loop.close()
+            return result
+        
+        from threading import Thread
+        result_container = {}
+        
+        def test_thread():
+            result_container['result'] = run_test()
+        
+        thread = Thread(target=test_thread)
+        thread.start()
+        thread.join(timeout=15)
+        
+        progress_dialog.close()
+        
+        # Показываем результат
+        if 'result' not in result_container:
+            QMessageBox.warning(self, "Ошибка", "Проверка прокси заняла слишком много времени (>15 сек)")
+            return
+        
+        result = result_container['result']
+        
+        if result['ok']:
+            msg = f"✅ Прокси работает!\n\n"
+            msg += f"Аккаунт: {account.name}\n"
+            msg += f"Прокси: {account.proxy}\n"
+            msg += f"IP: {result['ip']}\n"
+            msg += f"Задержка: {result['latency_ms']} мс"
+            QMessageBox.information(self, "Результат проверки", msg)
+            self.log_action(f"Прокси {account.proxy} работает (IP: {result['ip']}, {result['latency_ms']}ms)")
+        else:
+            msg = f"❌ Прокси НЕ работает!\n\n"
+            msg += f"Аккаунт: {account.name}\n"
+            msg += f"Прокси: {account.proxy}\n"
+            msg += f"Ошибка: {result['error']}\n"
+            msg += f"Задержка: {result['latency_ms']} мс"
+            QMessageBox.warning(self, "Результат проверки", msg)
+            self.log_action(f"Прокси {account.proxy} НЕ работает: {result['error']}")
     
     def login_selected(self):
         """Открыть Chrome с CDP для ручного логина"""
