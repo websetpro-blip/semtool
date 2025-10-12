@@ -187,7 +187,7 @@ class TurboWordstatParser:
                                 self.results[query] = frequency
                                 self.total_processed += 1
                                 self.aimd.on_success()
-                                print(f"[Tab {tab_id}] ✓ {query} = {frequency:,}")
+                                print(f"[Tab {tab_id}] OK {query} = {frequency:,}")
         except Exception as e:
             pass  # Игнорируем ошибки парсинга ответов
     
@@ -332,7 +332,7 @@ class TurboWordstatParser:
             await self.visual_manager.start_all_browsers(accounts)
             
             # Ждем пока пользователь залогинится
-            print("\n⚠ ВАЖНО: Залогиньтесь в каждом открытом браузере!")
+            print("\n[!] ВАЖНО: Залогиньтесь в каждом открытом браузере!")
             print("После логина парсинг начнется автоматически.\n")
             
             logged_in = await self.visual_manager.wait_for_all_logins(timeout=300)
