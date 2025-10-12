@@ -64,8 +64,8 @@ class TurboWordstatParser:
         self.pages = []  # мульти-табы
         self.results = {}
         self.aimd = AIMDController()
-        self.num_tabs = 10  # количество вкладок для параллельного парсинга
-        self.num_browsers = 3  # количество видимых браузеров
+        self.num_tabs = 3  # количество вкладок для параллельного парсинга (уменьшено с 10)
+        self.num_browsers = 1  # количество видимых браузеров (уменьшено с 3)
         self.visual_manager = None  # Менеджер визуальных браузеров
         self.db_path = Path("C:/AI/yandex/semtool/data/semtool.db")
         self.auth_handler = AutoAuthHandler()  # Обработчик авторизации
