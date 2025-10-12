@@ -150,12 +150,19 @@ class TurboWordstatParser:
         # Используем нужное количество
         self.pages = existing_pages[:self.num_tabs]
         
+        # КРИТИЧНО из файла 45: словарь для маппинга вкладок
+        self.page_mapping = {}
+        
         # Открываем Wordstat на всех вкладках
         for i, page in enumerate(self.pages):
             try:
+                # ИСПРАВЛЕНИЕ из файла 45: правильная загрузка и ожидание URL
                 await page.goto("https://wordstat.yandex.ru", wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
+                
+                self.page_mapping[i] = page  # Сохраняем маппинг tab_id -> page
                 await asyncio.sleep(0.5)  # небольшая пауза между открытиями
-                print(f"[TURBO] Tab {i}: Wordstat загружен")
+                print(f"[TURBO] Tab {i}: Wordstat загружен и готов")
             except Exception as e:
                 print(f"[TURBO] Tab {i}: Ошибка загрузки - {e}")
         
@@ -202,42 +209,55 @@ class TurboWordstatParser:
                 url = f"https://wordstat.yandex.ru/#!/?words={quote(phrase)}&regions=225"
                 await page.goto(url, timeout=30000)
                 
-                # КРИТИЧНО: Ждем загрузку URL и ответ от сервера (из файла 44)
+                # КРИТИЧНО из файла 45: полное ожидание загрузки
                 await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
                 
-                # Ждем ответ с данными (ВАЖНО для SPA)
+                # Дополнительное ожидание из файла 45: ждём либо ответ, либо таблицу
                 try:
+                    # Вариант 1: ждём сетевой ответ
                     await page.wait_for_response(
                         lambda r: "wordstat.yandex.ru" in r.url and r.ok,
                         timeout=10000
                     )
                 except:
-                    pass  # Может не быть XHR на первой загрузке
+                    # Вариант 2: ждём появление таблицы с результатами
+                    try:
+                        await page.locator("table >> tbody >> tr").first.wait_for(timeout=10000)
+                    except:
+                        pass  # Может не быть данных на первой загрузке
                 
-                # Проверяем не открылось ли в iframe (challenge)
-                iframe_selectors = [
-                    'iframe[src*="challenge"]',
-                    'iframe[name*="passp:challenge"]',
-                    'iframe[src*="passport"]'
-                ]
-                
-                for iframe_sel in iframe_selectors:
-                    if await page.locator(iframe_sel).count() > 0:
-                        print(f"[Tab {tab_id}] Обнаружен challenge в iframe для {phrase}")
-                        # Используем frame_locator для работы с iframe (из файла 44)
-                        frame = page.frame_locator(iframe_sel)
-                        answer_field = frame.locator('input[name="answer"], input[type="text"]')
+                # УЛУЧШЕННАЯ обработка iframe challenge из файла 45
+                if await page.locator('iframe[src*="challenge"]').count() > 0:
+                    print(f"[Tab {tab_id}] Обнаружен challenge в iframe для {phrase}")
+                    
+                    # Используем frame_locator с множественными селекторами
+                    ch = page.frame_locator('iframe[src*="challenge"], iframe[name*="passp:challenge"]')
+                    
+                    # КРИТИЧНО из файла 45: используем get_by_label для надёжности
+                    try:
+                        # Пробуем найти поле по label
+                        answer = ch.get_by_label('Ответ на контрольный вопрос')
                         
-                        # Если есть поле ответа и у нас есть секретный ответ
-                        if await answer_field.count() > 0 and self.account and hasattr(self.account, 'secret_answer'):
-                            await answer_field.fill(self.account.secret_answer)
-                            submit_btn = frame.locator('button[type="submit"], button:has-text("Продолжить")')
-                            if await submit_btn.count() > 0:
-                                await submit_btn.click()
-                                await asyncio.sleep(2)
+                        # Ждём пока поле станет доступным
+                        await answer.wait_for(timeout=5000)
+                        
+                        # Если есть секретный ответ - вводим
+                        if self.account and hasattr(self.account, 'secret_answer'):
+                            await answer.fill(self.account.secret_answer)
+                            
+                            # Используем get_by_role для кнопки (рекомендация из файла 45)
+                            submit_btn = ch.get_by_role('button', name='Продолжить')
+                            await submit_btn.click()
+                            
+                            # Ждём возврата на Wordstat
+                            await page.wait_for_url(r'.*wordstat\.yandex\.ru.*', timeout=60000)
+                            print(f"[Tab {tab_id}] Challenge пройден успешно")
                         else:
-                            print(f"[Tab {tab_id}] ВНИМАНИЕ: Требуется ответ на секретный вопрос!")
+                            print(f"[Tab {tab_id}] ВНИМАНИЕ: Нет секретного ответа!")
                             continue
+                    except Exception as e:
+                        print(f"[Tab {tab_id}] Ошибка обработки challenge: {e}")
+                        continue
                 
                 # Проверяем не перекинуло ли на авторизацию
                 if await self.auth_handler.check_auth_required(page):
