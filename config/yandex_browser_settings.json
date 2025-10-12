@@ -1,0 +1,21 @@
+{
+    "browser_executable": "%LOCALAPPDATA%\\Yandex\\YandexBrowser\\Application\\browser.exe",
+    "browser_type": "yandex",
+    "profile": {
+        "name": "wordstat_main",
+        "path": "C:/AI/yandex/.profiles/wordstat_main",
+        "description": "Main authorized profile with cookies"
+    },
+    "cdp_port": 9222,
+    "launch_args": [
+        "--remote-debugging-port=9222",
+        "--user-data-dir=C:\\AI\\yandex\\.profiles\\wordstat_main",
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check"
+    ],
+    "wordstat_url": "https://wordstat.yandex.ru/",
+    "note": "Use ONLY Yandex Browser with wordstat_main profile. Do NOT use Chrome or create other profiles!",
+    "created_at": "2025-01-11",
+    "version": "3.0"
+}

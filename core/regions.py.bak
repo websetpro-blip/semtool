@@ -1,0 +1,68 @@
+﻿from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, List
+import json
+
+DATA_FILE = Path(__file__).resolve().parent.parent / 'data' / 'regions.json'
+
+
+@dataclass(frozen=True)
+class Region:
+    id: int
+    name: str
+
+
+_DEFAULT_REGIONS: tuple[Region, ...] = (
+    Region(0, 'Все регионы'),
+    Region(225, 'Россия'),
+    Region(213, 'Москва и область'),
+    Region(2, 'Санкт-Петербург и область'),
+    Region(187, 'Минск'),
+    Region(157, 'Казахстан'),
+    Region(197, 'Украина'),
+    Region(149, 'Беларусь'),
+    Region(158, 'Азербайджан'),
+    Region(159, 'Армения'),
+    Region(160, 'Грузия'),
+    Region(162, 'Кыргызстан'),
+    Region(163, 'Латвия'),
+    Region(164, 'Литва'),
+    Region(166, 'Молдова'),
+    Region(167, 'Таджикистан'),
+    Region(168, 'Туркменистан'),
+    Region(169, 'Узбекистан'),
+    Region(170, 'Эстония'),
+    Region(191, 'Новосибирск'),
+    Region(193, 'Екатеринбург'),
+    Region(221, 'Нижний Новгород'),
+    Region(54, 'Краснодарский край'),
+    Region(75, 'Ростовская область'),
+    Region(78, 'Самарская область'),
+    Region(113, 'Татарстан'),
+)
+
+
+def load_regions() -> List[Region]:
+    """Load region directory from data/regions.json or fall back to predefined list."""
+    if DATA_FILE.exists():
+        try:
+            payload = json.loads(DATA_FILE.read_text(encoding='utf-8'))
+            regions: list[Region] = []
+            for entry in payload:
+                try:
+                    region_id = int(entry['id'])
+                    name = str(entry['name'])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                regions.append(Region(region_id, name))
+            if regions:
+                regions.sort(key=lambda r: (r.name.lower(), r.id))
+                return regions
+        except (json.JSONDecodeError, OSError):
+            pass
+    return list(_DEFAULT_REGIONS)
+
+
+__all__ = ['Region', 'load_regions']

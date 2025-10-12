@@ -1,0 +1,13 @@
+﻿depth_levels: 2
+min_freq_leftcol: 5
+min_freq_rightcol: 10
+topN_suggest: 20
+dedupe_norm: true
+pass_to_next_level:
+  strategy: "freq_or_contains_core"
+  min_freq: 10
+  keep_percent: 30
+stop_words:
+  - ������
+  - ��������
+  - ��������

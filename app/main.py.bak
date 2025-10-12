@@ -1,0 +1,1331 @@
+from __future__ import annotations
+
+import json
+import os
+import csv
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional
+
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSignalBlocker
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
+    QApplication,
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHeaderView,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QSplitter,
+    QDoubleSpinBox,
+    QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..services import phrase_tools
+from ..services import accounts as account_service
+from ..services import tasks as task_service
+from ..services import importer as importer_service
+from ..workers.frequency_runner import execute_task
+from ..workers.deep_runner import run_deep_task
+from ..core.db import Base, engine, ensure_schema, SessionLocal
+from ..core.models import Task
+from ..core.regions import load_regions
+
+LOGS_DIR = Path("results") / "gui_logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+MANUAL_SEEDS_DIR = Path("results") / "manual_inputs"
+MANUAL_SEEDS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def append_log_line(path: Path, message: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{stamp}] {message}\n")
+    except OSError:
+        pass
+
+
+def materialize_seeds(manual_lines: list[str], file_path: Optional[str], prefix: str) -> Path:
+    prepared = [line.strip() for line in manual_lines if line.strip()]
+    if prepared:
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        manual_path = MANUAL_SEEDS_DIR / f"{prefix}_{timestamp}.txt"
+        manual_path.write_text("\n".join(prepared), encoding="utf-8")
+        return manual_path
+    if not file_path:
+        raise ValueError("   ")
+    path = Path(file_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(path)
+    return path
+
+
+TASK_KIND_LABELS = {
+    "frequency": "",
+    "deep": " ",
+}
+
+STATUS_LABELS = {
+    "ok": "",
+    "cooldown": "",
+    "captcha": "",
+    "banned": "",
+    "disabled": "",
+    "error": "",
+}
+
+
+def status_label(code: str) -> str:
+    return STATUS_LABELS.get(code, code)
+
+
+def format_ts(value: Optional[datetime]) -> str:
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def open_local_path(parent: QWidget | None, path: Optional[str]) -> None:
+    if not path:
+        return
+    target = Path(path).expanduser()
+    if not target.exists():
+        QMessageBox.warning(parent, "Открытие файла", f"Файл не найден: {target}")
+        return
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+
+def fetch_task_summary(task_id: int) -> Optional[dict[str, Any]]:
+    with SessionLocal() as session:
+        task = session.get(Task, task_id)
+        if task is None:
+            return None
+        return {
+            "status": task.status,
+            "output_path": task.output_path,
+            "log_path": task.log_path,
+            "error_message": task.error_message,
+        }
+
+class AccountDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None, *, data: Optional[dict[str, Any]] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Аккаунт")
+        self.name_edit = QLineEdit()
+        self.profile_edit = QLineEdit()
+        self.proxy_edit = QLineEdit()
+        self.notes_edit = QPlainTextEdit()
+        self.notes_edit.setPlaceholderText("Дополнительные заметки")
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        form = QFormLayout(self)
+        form.addRow("Имя:", self.name_edit)
+        form.addRow("Путь к профилю:", self.profile_edit)
+        form.addRow("РџСЂРѕРєСЃРё:", self.proxy_edit)
+        form.addRow("Заметки:", self.notes_edit)
+        form.addRow(buttons)
+
+        if data:
+            self.name_edit.setText(data.get("name", ""))
+            self.profile_edit.setText(data.get("profile_path", ""))
+            self.proxy_edit.setText(data.get("proxy") or "")
+            self.notes_edit.setPlainText(data.get("notes") or "")
+
+        self._result: Optional[dict[str, Any]] = None
+
+    def accept(self) -> None:  # type: ignore[override]
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Проверка", "Укажите имя аккаунта")
+            return
+        profile_path = self.profile_edit.text().strip()
+        if not profile_path:
+            profile_path = str(Path("profiles") / name)
+        proxy = self.proxy_edit.text().strip() or None
+        notes = self.notes_edit.toPlainText().strip() or None
+        self._result = {
+            "name": name,
+            "profile_path": profile_path,
+            "proxy": proxy,
+            "notes": notes,
+        }
+        super().accept()
+
+    def get_data(self) -> Optional[dict[str, Any]]:
+        return self._result
+
+
+class PhrasePrepTab(QWidget):
+    def __init__(self, *, collect_tab: "CollectTab" | None = None, deep_tab: "DeepTab" | None = None) -> None:
+        super().__init__()
+        self.collect_tab = collect_tab
+        self.deep_tab = deep_tab
+
+        self.input_edit = QPlainTextEdit()
+        self.input_edit.setPlaceholderText("Вставьте исходные фразы по одной в строке")
+
+        self.result_edit = QPlainTextEdit()
+        self.result_edit.setReadOnly(True)
+
+        self.status_label = QLabel()
+        self.status_label.setObjectName("phraseStatus")
+
+        self.lowercase_check = QCheckBox("Привести к нижнему регистру")
+        self.lowercase_check.setChecked(True)
+        self.strip_punct_check = QCheckBox("Удалить знаки пунктуации")
+        self.dedup_check = QCheckBox("Удалить дубликаты")
+        self.dedup_check.setChecked(True)
+
+        norm_box = QGroupBox("Нормализация")
+        norm_layout = QVBoxLayout(norm_box)
+        norm_layout.addWidget(self.lowercase_check)
+        norm_layout.addWidget(self.strip_punct_check)
+        norm_layout.addWidget(self.dedup_check)
+        self.normalize_btn = QPushButton("Нормализовать")
+        self.normalize_btn.clicked.connect(self.normalize_phrases)
+        norm_layout.addWidget(self.normalize_btn)
+
+        self.min_len_spin = QSpinBox()
+        self.min_len_spin.setRange(0, 100)
+        self.min_len_spin.setValue(0)
+        self.max_len_spin = QSpinBox()
+        self.max_len_spin.setRange(0, 200)
+        self.max_len_spin.setSpecialValueText("без ограничения")
+        self.max_len_spin.setValue(0)
+        self.allow_digits_check = QCheckBox("Оставлять фразы с цифрами")
+        self.allow_digits_check.setChecked(True)
+        self.allow_punct_filter_check = QCheckBox("Оставлять фразы с пунктуацией")
+        self.allow_punct_filter_check.setChecked(True)
+        self.stopwords_line = QLineEdit()
+        self.stopwords_line.setPlaceholderText("стоп-слова через запятую")
+
+        filter_box = QGroupBox("Фильтрация")
+        filter_form = QFormLayout(filter_box)
+        filter_form.addRow("Мин. длина:", self.min_len_spin)
+        filter_form.addRow("Макс. длина:", self.max_len_spin)
+        filter_form.addRow("", self.allow_digits_check)
+        filter_form.addRow("", self.allow_punct_filter_check)
+        filter_form.addRow("Стоп-слова:", self.stopwords_line)
+        self.filter_btn = QPushButton("Фильтровать")
+        self.filter_btn.clicked.connect(self.filter_phrases)
+        filter_form.addRow("", self.filter_btn)
+
+        self.similarity_spin = QDoubleSpinBox()
+        self.similarity_spin.setRange(0.0, 1.0)
+        self.similarity_spin.setSingleStep(0.05)
+        self.similarity_spin.setValue(0.5)
+
+        cluster_box = QGroupBox("Кластеризация")
+        cluster_form = QFormLayout(cluster_box)
+        cluster_form.addRow("Порог схожести:", self.similarity_spin)
+        self.cluster_btn = QPushButton("Сгруппировать")
+        self.cluster_btn.clicked.connect(self.cluster_phrases)
+        cluster_form.addRow("", self.cluster_btn)
+
+        self.combo_edit = QPlainTextEdit()
+        self.combo_edit.setPlaceholderText(
+            "    .\n:\n\n\n\n\n"
+        )
+        self.combo_normalize_check = QCheckBox("Применять нормализацию к комбинациям")
+        self.combo_normalize_check.setChecked(True)
+        self.combinate_btn = QPushButton("Сгенерировать комбинации")
+        self.combinate_btn.clicked.connect(self.generate_combinations)
+
+        combo_box = QGroupBox("Комбинации словарей")
+        combo_layout = QVBoxLayout(combo_box)
+        combo_layout.addWidget(self.combo_edit)
+        combo_layout.addWidget(self.combo_normalize_check)
+        combo_layout.addWidget(self.combinate_btn)
+
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.addWidget(QLabel("Исходные маски"))
+        left_layout.addWidget(self.input_edit)
+        left_layout.addWidget(combo_box)
+        left_layout.addWidget(norm_box)
+        left_layout.addWidget(filter_box)
+        left_layout.addWidget(cluster_box)
+        left_layout.addStretch(1)
+
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.addWidget(QLabel("Результат"))
+        right_layout.addWidget(self.result_edit)
+        buttons_row = QHBoxLayout()
+        self.copy_btn = QPushButton("Перенести во вход")
+        self.copy_btn.clicked.connect(self.copy_to_input)
+        self.apply_collect_btn = QPushButton("В частотность")
+        self.apply_collect_btn.clicked.connect(self.push_to_collect)
+        self.apply_deep_btn = QPushButton("В глубину")
+        self.apply_deep_btn.clicked.connect(self.push_to_deep)
+        self.save_btn = QPushButton("Сохранить…")
+        self.save_btn.clicked.connect(self.save_result)
+        self.clear_btn = QPushButton("Очистить")
+        self.clear_btn.clicked.connect(self.clear_result)
+        buttons_row.addWidget(self.copy_btn)
+        buttons_row.addWidget(self.apply_collect_btn)
+        buttons_row.addWidget(self.apply_deep_btn)
+        buttons_row.addWidget(self.save_btn)
+        buttons_row.addWidget(self.clear_btn)
+        buttons_row.addStretch(1)
+        right_layout.addLayout(buttons_row)
+        right_layout.addWidget(self.status_label)
+
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(splitter)
+
+        self.set_collect_tab(collect_tab)
+        self.set_deep_tab(deep_tab)
+
+    def set_collect_tab(self, collect_tab: "CollectTab" | None) -> None:
+        self.collect_tab = collect_tab
+        self.apply_collect_btn.setEnabled(collect_tab is not None)
+
+    def set_deep_tab(self, deep_tab: "DeepTab" | None) -> None:
+        self.deep_tab = deep_tab
+        self.apply_deep_btn.setEnabled(deep_tab is not None)
+
+    def _get_input_phrases(self) -> list[str]:
+        return [line.strip() for line in self.input_edit.toPlainText().splitlines() if line.strip()]
+
+    def _get_result_phrases(self) -> list[str]:
+        return [line.strip() for line in self.result_edit.toPlainText().splitlines() if line.strip()]
+
+    def _set_result(self, phrases: list[str]) -> None:
+        self.result_edit.setPlainText("\n".join(phrases))
+
+    def _update_status(self, message: str) -> None:
+        self.status_label.setText(message)
+
+    def _build_normalizer(self) -> phrase_tools.NormalizationOptions:
+        return phrase_tools.NormalizationOptions(
+            lowercase=self.lowercase_check.isChecked(),
+            collapse_whitespace=True,
+            strip_punctuation=self.strip_punct_check.isChecked(),
+            deduplicate=self.dedup_check.isChecked(),
+        )
+
+    def normalize_phrases(self) -> None:
+        phrases = self._get_input_phrases()
+        if not phrases:
+            self._update_status("Нет исходных фраз")
+            return
+        options = self._build_normalizer()
+        normalized = phrase_tools.normalize_phrases(phrases, options)
+        self._set_result(normalized)
+        self._update_status(f"Нормализовано: {len(normalized)}")
+
+    def filter_phrases(self) -> None:
+        phrases = self._get_result_phrases() or self._get_input_phrases()
+        if not phrases:
+            self._update_status("Нет данных для фильтрации")
+            return
+        max_len = self.max_len_spin.value() or None
+        stopwords = [w.strip() for w in self.stopwords_line.text().split(',') if w.strip()]
+        options = phrase_tools.FilterOptions(
+            min_length=self.min_len_spin.value(),
+            max_length=max_len,
+            allow_digits=self.allow_digits_check.isChecked(),
+            allow_punctuation=self.allow_punct_filter_check.isChecked(),
+            stopwords=stopwords,
+        )
+        filtered = phrase_tools.filter_phrases(phrases, options)
+        self._set_result(filtered)
+        self._update_status(f"Отфильтровано: {len(filtered)}")
+
+    def cluster_phrases(self) -> None:
+        phrases = self._get_result_phrases() or self._get_input_phrases()
+        if not phrases:
+            self._update_status("Нет данных для кластеризации")
+            return
+        clusters = phrase_tools.cluster_phrases(phrases, similarity=self.similarity_spin.value())
+        lines: list[str] = []
+        for size, representative, members in phrase_tools.walk_clusters(clusters):
+            lines.append(f"[{size}] {representative} -> {'; '.join(members)}")
+        self.result_edit.setPlainText("\n".join(lines))
+        self._update_status(f"Кластеров: {len(clusters)}")
+
+    def generate_combinations(self) -> None:
+        blocks: list[list[str]] = []
+        current: list[str] = []
+        for line in self.combo_edit.toPlainText().splitlines():
+            stripped = line.strip()
+            if not stripped:
+                if current:
+                    blocks.append(current)
+                    current = []
+                continue
+            current.append(stripped)
+        if current:
+            blocks.append(current)
+        if not blocks:
+            self._update_status("Словари не заданы")
+            return
+        normalizer = self._build_normalizer() if self.combo_normalize_check.isChecked() else None
+        combos = phrase_tools.generate_combinations(blocks, normalization=normalizer)
+        self._set_result(combos)
+        self._update_status(f"Комбинаций: {len(combos)}")
+
+    def copy_to_input(self) -> None:
+        phrases = self._get_result_phrases()
+        if not phrases:
+            self._update_status("Нет данных для переноса")
+            return
+        self.input_edit.setPlainText("\n".join(phrases))
+        self._update_status("Фразы перенесены во вход")
+
+    def push_to_collect(self) -> None:
+        if not self.collect_tab:
+            self._update_status("Вкладка «Частотность» недоступна")
+            return
+        phrases = self._get_result_phrases() or self._get_input_phrases()
+        if not phrases:
+            self._update_status("Нет данных для передачи")
+            return
+        self.collect_tab.set_manual_seeds(phrases)
+        self._update_status(f"Передано в частотность: {len(phrases)}")
+
+    def push_to_deep(self) -> None:
+        if not self.deep_tab:
+            self._update_status("Вкладка «Парсинг вглубь» недоступна")
+            return
+        phrases = self._get_result_phrases() or self._get_input_phrases()
+        if not phrases:
+            self._update_status("Нет данных для передачи")
+            return
+        self.deep_tab.set_manual_seeds(phrases)
+        self._update_status(f"Передано в глубину: {len(phrases)}")
+
+    def save_result(self) -> None:
+        phrases = self._get_result_phrases()
+        if not phrases:
+            self._update_status("Нет результатов для сохранения")
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            " ",
+            str(Path.cwd() / "phrases.txt"),
+            "  (*.txt);;CSV  (*.csv);;  (*.*)",
+        )
+        if not filename:
+            return
+        try:
+            Path(filename).write_text("\n".join(phrases), encoding="utf-8")
+            self._update_status(f": {filename}")
+        except OSError as exc:
+            QMessageBox.warning(self, "", f"   : {exc}")
+
+    def clear_result(self) -> None:
+        self.result_edit.clear()
+        self._update_status(" ")
+
+    def clear_input(self) -> None:
+        self.input_edit.clear()
+
+class FrequencyWorkerThread(QThread):
+    log_message = Signal(str)
+    completed = Signal(bool, str)
+    refresh_requested = Signal()
+
+    def __init__(self, task_id: int) -> None:
+        super().__init__()
+        self.task_id = task_id
+
+    def run(self) -> None:  # type: ignore[override]
+        self.log_message.emit(f"[freq] Запуск задачи #{self.task_id}")
+        try:
+            execute_task(self.task_id)
+            summary = fetch_task_summary(self.task_id)
+            message = "Сбор завершён"
+            if summary:
+                if summary.get("output_path"):
+                    message = f"Результат сохранён: {summary['output_path']}"
+                elif summary.get("log_path"):
+                    message = f"Лог: {summary['log_path']}"
+            self.log_message.emit(f"[freq] Завершено #{self.task_id}")
+            self.completed.emit(True, message)
+        except Exception as exc:  # pragma: no cover -  GUI
+            self.log_message.emit(f"[freq] Ошибка #{self.task_id}: {exc}")
+            self.completed.emit(False, str(exc))
+        finally:
+            self.refresh_requested.emit()
+
+
+class DeepWorkerThread(QThread):
+    log_message = Signal(str)
+    completed = Signal(bool, str)
+    refresh_requested = Signal()
+
+    def __init__(
+        self,
+        *,
+        task_id: int,
+        seeds_file: str,
+        depth: int,
+        min_shows: int,
+        expand_min: int,
+        topk: int,
+        region: Optional[int],
+        timestamp: str,
+        log_path: Path,
+    ) -> None:
+        super().__init__()
+        self.task_id = task_id
+        self.seeds_file = seeds_file
+        self.depth = depth
+        self.min_shows = min_shows
+        self.expand_min = expand_min
+        self.topk = topk
+        self.region = region
+        self.timestamp = timestamp
+        self.log_path = log_path
+
+    def run(self) -> None:  # type: ignore[override]
+        append_log_line(self.log_path, "  ")
+        self.log_message.emit(f":  #{self.task_id} ")
+        started = datetime.utcnow()
+        task_service.update_task_status(
+            self.task_id,
+            "running",
+            started_at=started,
+            log_path=str(self.log_path),
+        )
+        try:
+            output_path = run_deep_task(
+                seeds_file=self.seeds_file,
+                depth=self.depth,
+                min_shows=self.min_shows,
+                expand_min=self.expand_min,
+                topk=self.topk,
+                region=self.region,
+                timestamp=self.timestamp,
+            )
+            finished = datetime.utcnow()
+            task_service.update_task_status(
+                self.task_id,
+                "completed",
+                finished_at=finished,
+                output_path=str(output_path),
+            )
+            append_log_line(self.log_path, f": {output_path}")
+            self.log_message.emit(f":  #{self.task_id} ")
+            self.completed.emit(True, str(output_path))
+        except Exception as exc:  # pragma: no cover -   GUI
+            finished = datetime.utcnow()
+            task_service.update_task_status(
+                self.task_id,
+                "failed",
+                finished_at=finished,
+                error_message=str(exc),
+            )
+            append_log_line(self.log_path, f": {exc}")
+            self.log_message.emit(f":  #{self.task_id}    {exc}")
+            self.completed.emit(False, str(exc))
+        finally:
+            self.refresh_requested.emit()
+
+class AccountsTab(QWidget):
+    accounts_changed = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels([
+            "",
+            "",
+            "",
+            "РџСЂРѕРєСЃРё",
+            " ",
+            "",
+        ])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemSelectionChanged.connect(self._update_buttons)
+
+        self.table.itemDoubleClicked.connect(lambda *_: self.edit_account())
+
+        self.add_btn = QPushButton("Добавить")
+        self.add_btn.clicked.connect(self.add_account)
+        self.edit_btn = QPushButton("Изменить")
+        self.edit_btn.clicked.connect(self.edit_account)
+        self.delete_btn = QPushButton("Удалить")
+        self.delete_btn.clicked.connect(self.delete_account)
+        self.import_btn = QPushButton("Импорт…")
+        self.import_btn.clicked.connect(self.import_accounts)
+        self.refresh_btn = QPushButton("Обновить")
+        self.refresh_btn.clicked.connect(self.refresh)
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.add_btn)
+        buttons.addWidget(self.edit_btn)
+        buttons.addWidget(self.delete_btn)
+        buttons.addWidget(self.import_btn)
+        buttons.addStretch(1)
+        buttons.addWidget(self.refresh_btn)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(buttons)
+        layout.addWidget(self.table)
+
+        self._accounts: list[Any] = []
+        self.refresh()
+
+    def _selected_row(self) -> int:
+        selection = self.table.selectionModel()
+        if not selection:
+            return -1
+        indexes = selection.selectedRows()
+        return indexes[0].row() if indexes else -1
+
+    def _current_account(self) -> Any | None:
+        row = self._selected_row()
+        if row < 0 or row >= len(self._accounts):
+            return None
+        return self._accounts[row]
+
+    def _update_buttons(self) -> None:
+        has_selection = self._current_account() is not None
+        self.edit_btn.setEnabled(has_selection)
+        self.delete_btn.setEnabled(has_selection)
+
+    def refresh(self) -> None:
+        self._accounts = account_service.list_accounts()
+        self.table.setRowCount(len(self._accounts))
+        for row, account in enumerate(self._accounts):
+            items = [
+                QTableWidgetItem(account.name),
+                QTableWidgetItem(status_label(account.status)),
+                QTableWidgetItem(account.profile_path),
+                QTableWidgetItem(account.proxy or ""),
+                QTableWidgetItem(format_ts(account.last_used_at)),
+                QTableWidgetItem(account.notes or ""),
+            ]
+            items[0].setData(Qt.UserRole, account.id)
+            for col, item in enumerate(items):
+                if col in (0, 1, 3, 4):
+                    item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, col, item)
+        self._update_buttons()
+
+    def add_account(self) -> None:
+        dialog = AccountDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            data = dialog.get_data()
+            if data:
+                try:
+                    account_service.create_account(**data)
+                except Exception as exc:
+                    QMessageBox.warning(self, "", str(exc))
+                    return
+                self.refresh()
+                self.accounts_changed.emit()
+
+    def edit_account(self) -> None:
+        account = self._current_account()
+        if not account:
+            return
+        dialog = AccountDialog(self, data={
+            "name": account.name,
+            "profile_path": account.profile_path,
+            "proxy": account.proxy,
+            "notes": account.notes,
+        })
+        if dialog.exec() == QDialog.Accepted:
+            data = dialog.get_data()
+            if data:
+                try:
+                    account_service.update_account(account.id, **data)
+                except Exception as exc:
+                    QMessageBox.warning(self, "", str(exc))
+                    return
+                self.refresh()
+                self.accounts_changed.emit()
+
+    def delete_account(self) -> None:
+        account = self._current_account()
+        if not account:
+            return
+        if QMessageBox.question(
+            self,
+            "",
+            f"  {account.name}?",
+        ) != QMessageBox.Yes:
+            return
+        account_service.delete_account(account.id)
+        self.refresh()
+        self.accounts_changed.emit()
+
+    def import_accounts(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "    ",
+            str(Path.cwd()),
+            "  (*.txt);;  (*.*)",
+        )
+        if not path:
+            return
+        try:
+            imported = importer_service.import_accounts_from_file(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "", f"   : {exc}")
+            return
+        QMessageBox.information(self, "", f" : {imported}")
+        self.refresh()
+        self.accounts_changed.emit()
+
+class ResultViewerDialog(QDialog):
+    def __init__(self, path: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._path = Path(path)
+        self.setWindowTitle(f"Просмотр результата — {self._path.name}")
+
+        self.path_label = QLabel(str(self._path))
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.verticalHeader().setVisible(False)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.reject)
+        button_box.accepted.connect(self.accept)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.path_label)
+        layout.addWidget(self.table)
+        layout.addWidget(button_box)
+
+        try:
+            self._load_csv()
+        except Exception as exc:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть файл:\n{exc}")
+
+    def _load_csv(self) -> None:
+        if not self._path.exists():
+            raise FileNotFoundError(self._path)
+
+        with self._path.open('r', encoding='utf-8-sig', newline='') as handle:
+            sample = handle.read(4096)
+            handle.seek(0)
+            delimiter = ';'
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=';	,')
+                delimiter = dialect.delimiter
+            except Exception:
+                pass
+            reader = csv.reader(handle, delimiter=delimiter)
+            rows = list(reader)
+
+        if not rows:
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+            return
+
+        header = rows[0]
+        data_rows = rows[1:] if len(rows) > 1 else []
+        self.table.setColumnCount(len(header))
+        self.table.setHorizontalHeaderLabels(header)
+        self.table.setRowCount(len(data_rows))
+
+        for row_idx, row in enumerate(data_rows):
+            for col_idx, value in enumerate(row):
+                item = QTableWidgetItem(value)
+                self.table.setItem(row_idx, col_idx, item)
+
+        self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setStretchLastSection(True)
+
+
+class TasksTab(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.columns = [
+            'ID',
+            'РўРёРї',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+        ]
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(self.columns)
+        header = self.table.horizontalHeader()
+        for idx in range(len(self.columns)):
+            mode = QHeaderView.ResizeToContents if idx < 5 else QHeaderView.Stretch
+            header.setSectionResizeMode(idx, mode)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemSelectionChanged.connect(self._update_buttons)
+
+        self.refresh_btn = QPushButton("Обновить")
+        self.refresh_btn.clicked.connect(self.refresh)
+        self.open_result_btn = QPushButton("Открыть результат")
+        self.open_result_btn.clicked.connect(self.open_result)
+        self.open_log_btn = QPushButton("Открыть лог")
+        self.open_log_btn.clicked.connect(self.open_log)
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.refresh_btn)
+        buttons.addWidget(self.open_result_btn)
+        buttons.addWidget(self.open_log_btn)
+        buttons.addStretch(1)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(buttons)
+        layout.addWidget(self.table)
+
+        self._tasks: list[dict[str, Any]] = []
+        self.refresh()
+
+    def _selected_task(self) -> Optional[dict[str, Any]]:
+        selection = self.table.selectionModel()
+        if not selection:
+            return None
+        indexes = selection.selectedRows()
+        if not indexes:
+            return None
+        row = indexes[0].row()
+        if row < 0 or row >= len(self._tasks):
+            return None
+        return self._tasks[row]
+
+    def _update_buttons(self) -> None:
+        task = self._selected_task()
+        has_output = bool(task and task.get("output_path"))
+        has_log = bool(task and task.get("log_path"))
+        self.open_result_btn.setEnabled(has_output)
+        self.open_log_btn.setEnabled(has_log)
+
+    def refresh(self) -> None:
+        self._tasks = task_service.list_recent_tasks()
+        self.table.setRowCount(len(self._tasks))
+        for row, task in enumerate(self._tasks):
+            values = [
+                str(task["id"]),
+                TASK_KIND_LABELS.get(task["kind"], task["kind"]),
+                task.get("account_name") or "",
+                str(task.get("region") or 0),
+                task.get("status_label") or task.get("status"),
+                format_ts(task.get("created_at")),
+                format_ts(task.get("started_at")),
+                format_ts(task.get("finished_at")),
+                task.get("output_path") or "",
+                task.get("log_path") or "",
+                task.get("error_message") or (task.get("params") or ""),
+            ]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col in (0, 3):
+                    item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, col, item)
+        self._update_buttons()
+
+
+    def open_result(self) -> None:
+        task = self._selected_task()
+        if not task:
+            return
+        path_value = task.get("output_path")
+        if not path_value:
+            QMessageBox.information(self, "", "    .")
+            return
+        result_path = Path(path_value).expanduser()
+        if not result_path.exists():
+            QMessageBox.warning(self, "", f"  :\n{result_path}")
+            return
+        if result_path.suffix.lower() in {".csv", ".tsv"}:
+            dialog = ResultViewerDialog(result_path, self)
+            dialog.exec()
+        else:
+            open_local_path(self, path_value)
+
+
+    def open_log(self) -> None:
+        task = self._selected_task()
+        if task:
+            open_local_path(self, task.get("log_path"))
+
+class CollectTab(QWidget):
+    def __init__(self, accounts_tab: "AccountsTab", tasks_tab: "TasksTab" | None, log_widget: QTextEdit) -> None:
+        super().__init__()
+        self.accounts_tab = accounts_tab
+        self.tasks_tab = tasks_tab
+        self.log_widget = log_widget
+        self._accounts: list[Any] = []
+        self._from_preparation = False
+
+        self.seed_edit = QLineEdit()
+        self.seed_edit.setPlaceholderText("    ()")
+        self.seed_edit.textChanged.connect(self._update_source_label)
+        self.seed_text = QPlainTextEdit()
+        self.seed_text.setPlaceholderText("     ")
+        self.seed_text.setMaximumHeight(160)
+        self.seed_text.textChanged.connect(self._handle_manual_edit)
+
+        self.browse_btn = QPushButton("")
+        self.browse_btn.clicked.connect(self.choose_file)
+        self.accounts_combo = QComboBox()
+        self.accounts_combo.setMinimumWidth(220)
+        self.region_combo = QComboBox()
+        self.region_combo.setEditable(True)
+        self.region_combo.lineEdit().setPlaceholderText(" (225)")
+        self.headless_check = QCheckBox("   (headless)")
+        self.dump_json_check = QCheckBox("  JSON")
+        self.source_label = QLabel(":  ")
+        self.start_btn = QPushButton("Запустить сбор")
+        self.start_btn.clicked.connect(self.start_task)
+
+        accounts_tab.accounts_changed.connect(self.refresh_accounts)
+
+        seeds_layout = QVBoxLayout()
+        file_layout = QHBoxLayout()
+        file_layout.addWidget(self.seed_edit)
+        file_layout.addWidget(self.browse_btn)
+        seeds_layout.addLayout(file_layout)
+        seeds_layout.addWidget(self.seed_text)
+
+        form = QFormLayout()
+        form.addRow("  :", seeds_layout)
+        form.addRow(":", self.accounts_combo)
+        form.addRow(" (GeoID):", self.region_combo)
+        form.addRow("", self.headless_check)
+        form.addRow("", self.dump_json_check)
+        form.addRow("", self.source_label)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self.start_btn)
+        layout.addStretch(1)
+
+        self.populate_regions()
+        self.refresh_accounts()
+
+        self._worker: Optional[FrequencyWorkerThread] = None
+
+    def _log(self, message: str) -> None:
+        stamp = datetime.now().strftime("%H:%M:%S")
+        self.log_widget.append(f"[{stamp}] {message}")
+
+    def populate_regions(self) -> None:
+        self.region_combo.clear()
+        self.region_combo.addItem(" (225)", None)
+        regions = load_regions()
+        for region in regions:
+            label = f"{region.name} ({region.id})"
+            self.region_combo.addItem(label, region.id)
+        default_index = next((i for i, region in enumerate(regions, start=1) if region.id == 225), 0)
+        self.region_combo.setCurrentIndex(default_index)
+
+    def refresh_accounts(self) -> None:
+        current_id = self.accounts_combo.currentData()
+        self._accounts = account_service.list_accounts()
+        self.accounts_combo.clear()
+        selected_index = 0
+        for idx, account in enumerate(self._accounts):
+            label = account.name if account.status == "ok" else f"{account.name}  {status_label(account.status)}"
+            self.accounts_combo.addItem(label, account.id)
+            if current_id == account.id:
+                selected_index = idx
+        if self._accounts:
+            self.accounts_combo.setCurrentIndex(selected_index)
+
+    def set_manual_seeds(self, phrases: list[str]) -> None:
+        prepared = [p.strip() for p in phrases if p.strip()]
+        with QSignalBlocker(self.seed_text):
+            self.seed_text.setPlainText("\n".join(prepared))
+        self.seed_edit.clear()
+        self._from_preparation = True
+        self._update_source_label()
+        if prepared:
+            self.seed_text.setFocus()
+
+    def _handle_manual_edit(self) -> None:
+        if self._from_preparation:
+            self._from_preparation = False
+        self._update_source_label()
+
+    def _update_source_label(self) -> None:
+        manual_count = len([line.strip() for line in self.seed_text.toPlainText().splitlines() if line.strip()])
+        if self._from_preparation and manual_count:
+            self.source_label.setText(f":  ({manual_count})")
+        elif self.seed_edit.text().strip():
+            self.source_label.setText(": ")
+        elif manual_count:
+            self.source_label.setText(f":   ({manual_count})")
+        else:
+            self.source_label.setText(":  ")
+
+    def choose_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "   ",
+            str(Path.cwd()),
+            "  (*.txt);;  (*.*)",
+        )
+        if path:
+            self.seed_edit.setText(path)
+            with QSignalBlocker(self.seed_text):
+                self.seed_text.clear()
+            self._from_preparation = False
+            self._update_source_label()
+
+    def _selected_account(self) -> Any | None:
+        account_id = self.accounts_combo.currentData()
+        for account in self._accounts:
+            if account.id == account_id:
+                return account
+        return None
+
+    def start_task(self) -> None:
+        account = self._selected_account()
+        if account is None:
+            QMessageBox.warning(self, "", "    ")
+            return
+        if account.status != "ok":
+            QMessageBox.warning(
+                self,
+                "",
+                f" {account.name}  (: {status_label(account.status)})",
+            )
+            return
+
+
+        manual_lines = [line.strip() for line in self.seed_text.toPlainText().splitlines() if line.strip()]
+        seed_file = self.seed_edit.text().strip() or None
+        if not manual_lines and not seed_file:
+            QMessageBox.warning(self, "", "       ")
+            return
+        try:
+            seeds_path = materialize_seeds(manual_lines, seed_file, "freq_manual")
+        except (FileNotFoundError, ValueError) as exc:
+            QMessageBox.warning(self, "", str(exc))
+            return
+
+        combo_data = self.region_combo.currentData()
+        region = int(combo_data) if combo_data is not None else 225
+        params = {
+            "source": "text" if manual_lines else "file",
+            "count": len(manual_lines) if manual_lines else 0,
+            "region": region,
+        }
+        try:
+            task = task_service.enqueue_task(
+                account_id=account.id,
+                seed_file=str(seeds_path),
+                region=region,
+                headless=self.headless_check.isChecked(),
+                dump_json=self.dump_json_check.isChecked(),
+                kind="frequency",
+                params=json.dumps(params, ensure_ascii=False),
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "", f"   : {exc}")
+            return
+
+        self._log(f"Запущена задача #{task.id} → {account.name}")
+        self.start_btn.setEnabled(False)
+        self._worker = FrequencyWorkerThread(task.id)
+        self._worker.log_message.connect(self._log)
+        self._worker.completed.connect(self._task_completed)
+        self._worker.finished.connect(self._on_worker_finished)
+
+        if self.tasks_tab:
+            self._worker.refresh_requested.connect(self.tasks_tab.refresh)
+        self._worker.start()
+
+    def _task_completed(self, success: bool, message: str) -> None:
+        if success:
+            QMessageBox.information(self, " ", message)
+        else:
+            QMessageBox.warning(self, " ", f": {message}")
+        if self.tasks_tab:
+            self.tasks_tab.refresh()
+
+    def _on_worker_finished(self) -> None:
+        self.start_btn.setEnabled(True)
+        self._worker = None
+
+
+class DeepTab(QWidget):
+    def __init__(self, log_widget: QTextEdit, tasks_tab: "TasksTab" | None) -> None:
+        super().__init__()
+        self.log_widget = log_widget
+        self.tasks_tab = tasks_tab
+        self._from_preparation = False
+
+        self.seed_edit = QLineEdit()
+        self.seed_edit.setPlaceholderText("    ()")
+        self.seed_edit.textChanged.connect(self._update_source_label)
+        self.seed_text = QPlainTextEdit()
+        self.seed_text.setPlaceholderText("     ")
+        self.seed_text.setMaximumHeight(160)
+        self.seed_text.textChanged.connect(self._handle_manual_edit)
+        self.browse_btn = QPushButton("")
+        self.browse_btn.clicked.connect(self.choose_file)
+        self.depth_spin = QSpinBox()
+        self.depth_spin.setRange(1, 5)
+        self.depth_spin.setValue(2)
+        self.min_shows_spin = QSpinBox()
+        self.min_shows_spin.setRange(0, 1_000_000)
+        self.min_shows_spin.setValue(100)
+        self.expand_min_spin = QSpinBox()
+        self.expand_min_spin.setRange(0, 5_000_000)
+        self.expand_min_spin.setValue(1000)
+        self.topk_spin = QSpinBox()
+        self.topk_spin.setRange(1, 1000)
+        self.topk_spin.setValue(50)
+        self.region_combo = QComboBox()
+        self.region_combo.setEditable(True)
+        self.region_combo.lineEdit().setPlaceholderText(" ( )")
+        self.source_label = QLabel(":  ")
+        self.start_btn = QPushButton("Запустить парсинг")
+        self.start_btn.clicked.connect(self.start_task)
+
+        seeds_layout = QVBoxLayout()
+        file_layout = QHBoxLayout()
+        file_layout.addWidget(self.seed_edit)
+        file_layout.addWidget(self.browse_btn)
+        seeds_layout.addLayout(file_layout)
+        seeds_layout.addWidget(self.seed_text)
+
+        form = QFormLayout()
+        form.addRow(":", seeds_layout)
+        form.addRow(":", self.depth_spin)
+        form.addRow(". :", self.min_shows_spin)
+        form.addRow(" :", self.expand_min_spin)
+        form.addRow(", .:", self.topk_spin)
+        form.addRow(" (GeoID):", self.region_combo)
+        form.addRow("", self.source_label)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self.start_btn)
+        layout.addStretch(1)
+
+        self.populate_regions()
+
+        self._worker: Optional[DeepWorkerThread] = None
+
+    def _log(self, message: str) -> None:
+        stamp = datetime.now().strftime("%H:%M:%S")
+        self.log_widget.append(f"[{stamp}] {message}")
+
+    def set_manual_seeds(self, phrases: list[str]) -> None:
+        prepared = [p.strip() for p in phrases if p.strip()]
+        with QSignalBlocker(self.seed_text):
+            self.seed_text.setPlainText("\n".join(prepared))
+        self.seed_edit.clear()
+        self._from_preparation = True
+        self._update_source_label()
+        if prepared:
+            self.seed_text.setFocus()
+
+    def _handle_manual_edit(self) -> None:
+        if self._from_preparation:
+            self._from_preparation = False
+        self._update_source_label()
+
+    def _update_source_label(self) -> None:
+        manual_count = len([line.strip() for line in self.seed_text.toPlainText().splitlines() if line.strip()])
+        if self._from_preparation and manual_count:
+            self.source_label.setText(f":  ({manual_count})")
+        elif self.seed_edit.text().strip():
+            self.source_label.setText(": ")
+        elif manual_count:
+            self.source_label.setText(f":   ({manual_count})")
+        else:
+            self.source_label.setText(":  ")
+
+    def populate_regions(self) -> None:
+        self.region_combo.clear()
+        self.region_combo.addItem(" ( )", None)
+        regions = load_regions()
+        for region in regions:
+            label = f"{region.name} ({region.id})"
+            self.region_combo.addItem(label, region.id)
+        default_index = next((i for i, region in enumerate(regions, start=1) if region.id == 225), 0)
+        self.region_combo.setCurrentIndex(default_index)
+
+    def choose_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "   ",
+            str(Path.cwd()),
+            "  (*.txt);;  (*.*)",
+        )
+        if path:
+            self.seed_edit.setText(path)
+            with QSignalBlocker(self.seed_text):
+                self.seed_text.clear()
+            self._from_preparation = False
+            self._update_source_label()
+
+    def start_task(self) -> None:
+        manual_lines = [line.strip() for line in self.seed_text.toPlainText().splitlines() if line.strip()]
+        seed_file = self.seed_edit.text().strip() or None
+        if not manual_lines and not seed_file:
+            QMessageBox.warning(self, "", "       ")
+            return
+        try:
+            seeds_path = materialize_seeds(manual_lines, seed_file, "deep_manual")
+        except (FileNotFoundError, ValueError) as exc:
+            QMessageBox.warning(self, "", str(exc))
+            return
+
+        region_data = self.region_combo.currentData()
+        region_value = int(region_data) if region_data is not None else None
+        params = {
+            "depth": self.depth_spin.value(),
+            "min_shows": self.min_shows_spin.value(),
+            "expand_min": self.expand_min_spin.value(),
+            "topk": self.topk_spin.value(),
+            "region": region_value,
+            "source": "text" if manual_lines else "file",
+            "count": len(manual_lines) if manual_lines else 0,
+        }
+        try:
+            task = task_service.enqueue_task(
+                account_id=None,
+                seed_file=str(seeds_path),
+                region=region_value or 0,
+                kind="deep",
+                params=json.dumps(params, ensure_ascii=False),
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "", f"   : {exc}")
+            return
+
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        log_path = LOGS_DIR / f"deep_{timestamp}.log"
+        self._log(f"Парсинг: задача #{task.id} → {len(manual_lines) or 'файл'}")
+        self.start_btn.setEnabled(False)
+        self._worker = DeepWorkerThread(
+            task_id=task.id,
+            seeds_file=str(seeds_path),
+            depth=self.depth_spin.value(),
+            min_shows=self.min_shows_spin.value(),
+            expand_min=self.expand_min_spin.value(),
+            topk=self.topk_spin.value(),
+            region=region_value,
+            timestamp=timestamp,
+            log_path=log_path,
+        )
+        self._worker.log_message.connect(self._log)
+        self._worker.completed.connect(self._task_completed)
+        self._worker.finished.connect(self._on_worker_finished)
+        if self.tasks_tab:
+            self._worker.refresh_requested.connect(self.tasks_tab.refresh)
+        self._worker.start()
+
+    def _task_completed(self, success: bool, message: str) -> None:
+        if success:
+            QMessageBox.information(self, " ", f" : {message}")
+        else:
+            QMessageBox.warning(self, " ", f": {message}")
+        if self.tasks_tab:
+            self.tasks_tab.refresh()
+
+    def _on_worker_finished(self) -> None:
+        self.start_btn.setEnabled(True)
+        self._worker = None
+
+
+class MainWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("SemTool   ")
+        self.resize(1100, 700)
+
+        ensure_schema()
+        Base.metadata.create_all(engine)
+
+        self.accounts_tab = AccountsTab()
+        self.tasks_tab = TasksTab()
+        self.log_widget = QTextEdit()
+        self.log_widget.setReadOnly(True)
+        self.collect_tab = CollectTab(self.accounts_tab, self.tasks_tab, self.log_widget)
+        self.deep_tab = DeepTab(self.log_widget, self.tasks_tab)
+        self.prep_tab = PhrasePrepTab(collect_tab=self.collect_tab, deep_tab=self.deep_tab)
+
+        tabs = QTabWidget()
+        tabs.addTab(self.accounts_tab, "")
+        tabs.addTab(self.prep_tab, " ")
+        tabs.addTab(self.collect_tab, "")
+        tabs.addTab(self.deep_tab, " ")
+        tabs.addTab(self.tasks_tab, " ")
+
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.addWidget(tabs)
+        layout.addWidget(QLabel(":"))
+        layout.addWidget(self.log_widget)
+
+        self.setCentralWidget(central)
+
+
+def main() -> None:
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+

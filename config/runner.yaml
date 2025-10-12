@@ -1,0 +1,19 @@
+﻿headless: true
+manual_login: true
+autocaptcha: true
+keep_context: true
+max_concurrent_pages: 1
+cooldown_sec:
+  captcha: 300
+  banned: 3600
+  error: 120
+retry_policy:
+  max_attempts: 2
+  backoff_sec: 15
+region:
+  lr: 213
+pool:
+  - profile: dsmismirnov
+    proxy: "http://QBM0VA:AJmhjL@194.124.48.220:9478"
+    status: ok
+    notes: "baseline account"
