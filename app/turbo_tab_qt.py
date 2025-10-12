@@ -1,14 +1,15 @@
 ﻿"""
 ТУРБО ПАРСЕР TAB - GUI вкладка для турбо парсинга (PySide6)
-Интерфейс как в DirectParser с таблицей логов
+Inline version - все сервисы встроены, нет внешних зависимостей
 """
 
 import asyncio
 import time
 import traceback
+import csv
+import json
 from pathlib import Path
 from datetime import datetime
-import json
 from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -20,27 +21,116 @@ from PySide6.QtWidgets import (
     QPlainTextEdit
 )
 
-from ..services import accounts as account_service
-from ..workers.turbo_parser_integration import TurboWordstatParser
+from playwright.async_api import async_playwright
+from ..core.db import get_db_connection
+
+
+# ========================= INLINE SERVICES =========================
+
+def cluster_results(results):
+    """Кластеризация результатов с помощью NLTK"""
+    try:
+        from nltk.stem.snowball import SnowballStemmer
+        from nltk.corpus import stopwords
+        stemmer = SnowballStemmer('russian')
+        stops = set(stopwords.words('russian'))
+        grouped = {}
+        for r in results:
+            phrase = r['phrase'].lower()
+            if any(w in stops for w in phrase.split()):
+                continue
+            stem = stemmer.stem(phrase)
+            if stem not in grouped:
+                grouped[stem] = []
+            grouped[stem].append(r)
+        clustered = []
+        for stem, group in grouped.items():
+            if len(group) > 1 and min(g['freq'] for g in group) > 10:
+                avg_freq = sum(g['freq'] for g in group) / len(group)
+                for g in group:
+                    g['stem'] = stem
+                    g['avg_freq'] = avg_freq
+                    clustered.append(g)
+        clustered = list({r['phrase']: r for r in clustered}.values())
+        clustered.sort(key=lambda x: x['freq'], reverse=True)
+        for r in clustered:
+            with get_db_connection() as conn:
+                conn.execute("INSERT OR REPLACE INTO clusters (stem, phrases, avg_freq) VALUES (?, ?, ?)",
+                             (r['stem'], json.dumps([r['phrase']]), r['avg_freq']))
+        return clustered
+    except ImportError as e:
+        print(f"[!] NLTK error: {e} - Install nltk")
+        return results
+
+
+async def parse_frequency(masks):
+    """Парсинг частотности из Wordstat"""
+    results = []
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto("https://wordstat.yandex.ru/")
+        for mask in masks:
+            try:
+                await page.goto(f"https://wordstat.yandex.ru/#!/?words={mask}")
+                await page.wait_for_selector("[data-auto='phrase-count-total']", timeout=10000)
+                freq_text = await page.inner_text("[data-auto='phrase-count-total']")
+                freq = int(''.join(filter(str.isdigit, freq_text)))
+                result = {'phrase': mask, 'freq': freq, 'region': 225}
+                results.append(result)
+                with get_db_connection() as conn:
+                    conn.execute("INSERT OR REPLACE INTO frequencies (phrase, freq, region) VALUES (?, ?, ?)",
+                                 (mask, freq, 225))
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"[!] Freq error {mask}: {e}")
+                results.append({'phrase': mask, 'freq': 0, 'region': 225})
+        await browser.close()
+    return results
+
+
+async def parse_direct(freq_results):
+    """Парсинг прогнозов из Яндекс Директ"""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto("https://direct.yandex.ru/")
+        for r in freq_results:
+            try:
+                await page.goto(f"https://direct.yandex.ru/forecast/?phrase={r['phrase']}")
+                await page.wait_for_selector(".forecast-table", timeout=10000)
+                cpc_text = await page.inner_text(".cpc-value") or "0"
+                impressions_text = await page.inner_text(".impressions-value") or "0"
+                budget_text = await page.inner_text(".budget-value") or "0"
+                cpc = float(cpc_text.replace(',', '.').replace(' ', ''))
+                impressions = int(impressions_text.replace(' ', ''))
+                budget = float(budget_text.replace(',', '.').replace(' ', ''))
+                r.update({'cpc': cpc, 'impressions': impressions, 'budget': budget})
+                with get_db_connection() as conn:
+                    conn.execute("INSERT OR REPLACE INTO forecasts (phrase, cpc, impressions, budget, freq_ref) VALUES (?, ?, ?, ?, ?)",
+                                 (r['phrase'], cpc, impressions, budget, r['phrase']))
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"[!] Direct error {r['phrase']}: {e}")
+                r.update({'cpc': 0, 'impressions': 0, 'budget': 0})
+        await browser.close()
+    return freq_results
 
 
 class ParserWorkerThread(QThread):
-    """Поток для выполнения парсинга"""
+    """Поток для выполнения парсинга с inline сервисами"""
+    results_signal = Signal(list)
     log_signal = Signal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
     stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
-    log_message = Signal(str)  # Короткие уведомления в UI
-    error_signal = Signal(str)  # Текст ошибки для отображения
-    finished_signal = Signal(bool, str)  # успех, сообщение
+    log_message = Signal(str)
+    error_signal = Signal(str)
+    finished_signal = Signal(bool, str)
     
-    def __init__(self, queries, account, headless, mode, visual_mode=True, num_browsers=3):
+    def __init__(self, queries):
         super().__init__()
         self.queries = queries
-        self.account = account
-        self.headless = headless
-        self.mode = mode
-        self.visual_mode = visual_mode
-        self.num_browsers = num_browsers
-        self.parser = None
         self.start_time = None
         
     def run(self):
@@ -51,10 +141,59 @@ class ParserWorkerThread(QThread):
         asyncio.set_event_loop(loop)
         success = False
         message = ""
+        
         try:
-            results = loop.run_until_complete(self._run_async())
-            message = f"Обработано {len(results)} фраз"
+            self.log_message.emit("Загрузка масок...")
+            
+            # Парсинг частотности
+            self.log_message.emit("Парсинг частотности...")
+            freq_results = loop.run_until_complete(parse_frequency(self.queries))
+            self.log_message.emit(f"Частотность: {len(freq_results)} фраз")
+            
+            # Парсинг прогнозов Direct
+            self.log_message.emit("Парсинг прогнозов Direct...")
+            direct_results = loop.run_until_complete(parse_direct(freq_results))
+            self.log_message.emit("Прогнозы получены")
+            
+            # Кластеризация
+            self.log_message.emit("Кластеризация результатов...")
+            clustered = cluster_results(direct_results)
+            self.log_message.emit(f"Кластеризовано: {len(clustered)} групп")
+            
+            # Экспорт в CSV
+            csv_path = Path("data") / "results.csv"
+            csv_path.parent.mkdir(exist_ok=True)
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                if clustered:
+                    writer = csv.DictWriter(f, fieldnames=clustered[0].keys())
+                    writer.writeheader()
+                    writer.writerows(clustered)
+            self.log_message.emit(f"Экспорт в {csv_path}")
+            
+            # Отправляем результаты
+            elapsed = time.time() - self.start_time
+            processed = len(clustered)
+            errors = sum(1 for r in clustered if r.get('freq', 0) == 0)
+            success_count = processed - errors
+            speed_per_min = processed / elapsed * 60 if elapsed > 0 else 0
+            
+            # Логируем каждую фразу
+            for result in clustered:
+                self.log_signal.emit(
+                    datetime.now().strftime("%H:%M:%S"),
+                    "inline",
+                    result['phrase'],
+                    f"{result.get('freq', 0):,}",
+                    "OK" if result.get('freq', 0) > 0 else "Err",
+                    f"{speed_per_min:.1f}"
+                )
+            
+            self.stats_signal.emit(processed, success_count, errors, speed_per_min, elapsed)
+            self.results_signal.emit(clustered)
+            
+            message = f"Обработано {len(clustered)} фраз"
             success = True
+            
         except Exception as exc:
             message = str(exc)
             self.log_message.emit(f"Ошибка: {exc}")
@@ -71,67 +210,10 @@ class ParserWorkerThread(QThread):
                 pass
             loop.close()
             self.finished_signal.emit(success, message or "Парсинг завершён")
-    
-    async def _run_async(self):
-        """Асинхронный запуск парсера"""
-        self.parser = TurboWordstatParser(
-            account=self.account, 
-            headless=self.headless,
-            visual_mode=self.visual_mode
-        )
-        
-        # Настраиваем количество браузеров для визуального режима
-        if self.visual_mode:
-            self.parser.num_browsers = self.num_browsers
-        
-        # Настраиваем режим
-        if self.mode == "turbo":
-            self.parser.num_tabs = 10
-        elif self.mode == "fast":
-            self.parser.num_tabs = 5
-        else:
-            self.parser.num_tabs = 1
-        
-        try:
-            results = await self.parser.parse_batch(self.queries)
-
-            elapsed = max(time.time() - (self.start_time or time.time()), 1e-6)
-            processed = len(results)
-            errors = 0
-            if isinstance(results, list):
-                errors = sum(1 for item in results if isinstance(item, dict) and item.get("error"))
-            success_count = processed - errors
-            speed_per_min = processed / elapsed * 60 if elapsed > 0 else 0
-
-            for result in results:
-                query = result.get("query", "") if isinstance(result, dict) else str(result)
-                freq_value = 0
-                if isinstance(result, dict):
-                    freq_value = result.get("frequency") or 0
-                formatted_freq = (
-                    f"{int(freq_value):,}" if isinstance(freq_value, (int, float)) else str(freq_value)
-                )
-                status = result.get("status", "✓") if isinstance(result, dict) else "✓"
-                self.log_signal.emit(
-                    datetime.now().strftime("%H:%M:%S"),
-                    self.account.name if self.account else "default",
-                    query,
-                    formatted_freq,
-                    status,
-                    f"{speed_per_min:.1f}"
-                )
-
-            self.stats_signal.emit(processed, success_count, errors, speed_per_min, elapsed)
-            self.log_message.emit("Парсинг завершён.")
-            return results
-
-        finally:
-            if self.parser:
-                await self.parser.close()
 
 
 class TurboParserTab(QWidget):
-    """Вкладка турбо парсера с интерфейсом как в DirectParser"""
+    """Вкладка турбо парсера - упрощенная inline версия"""
     
     def __init__(self):
         super().__init__()
@@ -146,70 +228,14 @@ class TurboParserTab(QWidget):
         control_group = QGroupBox("Управление парсингом")
         control_layout = QVBoxLayout()
         
-        # Строка 1: Выбор аккаунтов
+        # Строка 1: Настройки
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Аккаунт:"))
-        
-        self.account_combo = QComboBox()
-        self.account_combo.setMinimumWidth(200)
-        row1.addWidget(self.account_combo)
-        
-        self.refresh_accounts_btn = QPushButton("Обновить")
-        self.refresh_accounts_btn.clicked.connect(self.load_accounts)
-        row1.addWidget(self.refresh_accounts_btn)
-        
-        self.auto_login_btn = QPushButton("Автологин")
-        self.auto_login_btn.clicked.connect(self.auto_login)
-        row1.addWidget(self.auto_login_btn)
-        
-        row1.addStretch()
-        control_layout.addLayout(row1)
-        
-        # Строка 2: Настройки парсинга
-        row2 = QHBoxLayout()
-        
-        row2.addWidget(QLabel("Режим:"))
-        self.mode_group = QButtonGroup()
-        
-        self.turbo_radio = QRadioButton("Турбо (195 фраз/мин)")
-        self.turbo_radio.setChecked(True)
-        self.mode_group.addButton(self.turbo_radio, 0)
-        row2.addWidget(self.turbo_radio)
-        
-        self.fast_radio = QRadioButton("Быстрый (100 фраз/мин)")
-        self.mode_group.addButton(self.fast_radio, 1)
-        row2.addWidget(self.fast_radio)
-        
-        self.normal_radio = QRadioButton("Обычный (20 фраз/мин)")
-        self.mode_group.addButton(self.normal_radio, 2)
-        row2.addWidget(self.normal_radio)
-        
-        row2.addWidget(QLabel("Регион:"))
+        row1.addWidget(QLabel("Регион:"))
         self.region_edit = QLineEdit("225")
         self.region_edit.setMaximumWidth(60)
-        row2.addWidget(self.region_edit)
-        
-        self.headless_check = QCheckBox("Фоновый режим")
-        self.headless_check.setChecked(False)  # По умолчанию визуальный режим
-        self.headless_check.toggled.connect(self.on_headless_toggled)
-        row2.addWidget(self.headless_check)
-        
-        self.visual_check = QCheckBox("Визуальный режим (несколько браузеров)")
-        self.visual_check.setChecked(True)  # По умолчанию включен
-        self.visual_check.toggled.connect(self.on_visual_toggled)
-        row2.addWidget(self.visual_check)
-        
-        # Настройка количества браузеров
-        row2.addWidget(QLabel("Браузеров:"))
-        self.num_browsers_spin = QSpinBox()
-        self.num_browsers_spin.setMinimum(1)
-        self.num_browsers_spin.setMaximum(6)
-        self.num_browsers_spin.setValue(3)
-        self.num_browsers_spin.setMaximumWidth(50)
-        row2.addWidget(self.num_browsers_spin)
-        
-        row2.addStretch()
-        control_layout.addLayout(row2)
+        row1.addWidget(self.region_edit)
+        row1.addStretch()
+        control_layout.addLayout(row1)
         
         # Строка 3: Загрузка фраз
         row3 = QHBoxLayout()
@@ -321,42 +347,7 @@ class TurboParserTab(QWidget):
         buttons_layout.addStretch()
         layout.addLayout(buttons_layout)
         
-        # Загружаем аккаунты при старте
-        self.load_accounts()
         self.phrases = []
-        
-    def load_accounts(self):
-        """Загрузка списка аккаунтов"""
-        self.account_combo.clear()
-        self.account_combo.addItem("CDP (Chrome на порту 9222)", None)
-        
-        accounts = account_service.list_accounts()
-        for acc in accounts:
-            self.account_combo.addItem(acc.name, acc.id)
-    
-    def on_headless_toggled(self, checked):
-        """При включении headless отключаем визуальный режим"""
-        if checked:
-            self.visual_check.setChecked(False)
-            self.num_browsers_spin.setEnabled(False)
-    
-    def on_visual_toggled(self, checked):
-        """При включении визуального режима отключаем headless"""
-        if checked:
-            self.headless_check.setChecked(False)
-            self.num_browsers_spin.setEnabled(True)
-        else:
-            self.num_browsers_spin.setEnabled(False)
-    
-    def auto_login(self):
-        """Автоматический логин с запросом секретного вопроса"""
-        account_id = self.account_combo.currentData()
-        if not account_id:
-            QMessageBox.warning(self, "Внимание", "Выберите аккаунт для логина")
-            return
-        
-        # TODO: Реализовать диалог для секретного вопроса
-        QMessageBox.information(self, "Автологин", "Функция в разработке")
     
     def load_phrases(self):
         """Загрузка фраз из файла"""
@@ -469,25 +460,6 @@ class TurboParserTab(QWidget):
             QMessageBox.warning(self, "Внимание", "Список фраз пуст")
             return
         
-        # Получаем выбранный аккаунт
-        account_id = self.account_combo.currentData()
-        account = None
-        if account_id:
-            # Найдем аккаунт по id из списка
-            accounts = account_service.list_accounts()
-            for acc in accounts:
-                if acc.id == account_id:
-                    account = acc
-                    break
-        
-        # Определяем режим
-        if self.turbo_radio.isChecked():
-            mode = "turbo"
-        elif self.fast_radio.isChecked():
-            mode = "fast"
-        else:
-            mode = "normal"
-        
         # Блокируем кнопку старта
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -496,14 +468,7 @@ class TurboParserTab(QWidget):
         self.logs_table.setRowCount(0)
         
         # Создаем и запускаем воркер
-        self.worker_thread = ParserWorkerThread(
-            self.phrases,
-            account,
-            self.headless_check.isChecked(),
-            mode,
-            visual_mode=self.visual_check.isChecked(),
-            num_browsers=self.num_browsers_spin.value()
-        )
+        self.worker_thread = ParserWorkerThread(self.phrases)
         
         # Подключаем сигналы
         self.worker_thread.log_signal.connect(self.on_log_received)
@@ -520,7 +485,7 @@ class TurboParserTab(QWidget):
             "",
             f"Запуск парсинга {len(self.phrases)} фраз...",
             "",
-            "🚀",
+            "Start",
             ""
         )
     
@@ -538,7 +503,7 @@ class TurboParserTab(QWidget):
             "",
             "Парсинг остановлен",
             "",
-            "⏹",
+            "Stop",
             ""
         )
     
