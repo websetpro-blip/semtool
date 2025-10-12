@@ -1,34 +1,26 @@
 ﻿"""
 ТУРБО ПАРСЕР TAB - GUI вкладка для турбо парсинга (PySide6)
-Inline version - все сервисы встроены, нет внешних зависимостей
+Full pipeline: Frequency → Direct → Clustering → Export
 """
 
 import asyncio
-import time
 import traceback
 import csv
 import json
-from pathlib import Path
+import time
 from datetime import datetime
-from typing import Optional
-
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QThread, pyqtSignal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
-    QPushButton, QTextEdit, QTableWidget, QTableWidgetItem,
-    QCheckBox, QSpinBox, QComboBox, QFileDialog, QMessageBox,
-    QHeaderView, QRadioButton, QButtonGroup, QLineEdit,
-    QPlainTextEdit
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
+    QTableWidget, QTableWidgetItem, QFileDialog, QHeaderView,
+    QGroupBox, QLabel, QLineEdit, QPlainTextEdit, QMessageBox
 )
-
-from playwright.async_api import async_playwright
+from pathlib import Path
 from ..core.db import get_db_connection
+from ..services import frequency, direct
 
-
-# ========================= INLINE SERVICES =========================
-
+# Inline cluster (NLTK, no separate)
 def cluster_results(results):
-    """Кластеризация результатов с помощью NLTK"""
     try:
         from nltk.stem.snowball import SnowballStemmer
         from nltk.corpus import stopwords
@@ -59,67 +51,43 @@ def cluster_results(results):
                              (r['stem'], json.dumps([r['phrase']]), r['avg_freq']))
         return clustered
     except ImportError as e:
-        print(f"[!] NLTK error: {e} - Install nltk")
-        return results
+        print(f"NLTK error: {e} - Install nltk")
+        return results  # Fallback
+
+# Use new services from services/frequency.py and services/direct.py
+async def parse_frequency(masks, region=225):
+    """Parse frequency using services.frequency module."""
+    return await frequency.parse_batch_wordstat(masks, region=region)
 
 
-async def parse_frequency(masks):
-    """Парсинг частотности из Wordstat"""
-    results = []
-    from pathlib import Path
-    profile_path = Path(__file__).parent.parent.parent / ".profiles" / "wordstat_main"
+async def parse_direct_forecast(freq_results, region=225):
+    """Parse Direct forecast using services.direct module."""
+    phrases = [r['phrase'] for r in freq_results]
+    forecasts = await direct.forecast_batch_direct(phrases, region=region)
     
-    async with async_playwright() as p:
-        # Используем авторизованный профиль Chrome
-        context = await p.chromium.launch_persistent_context(
-            str(profile_path),
-            headless=False,
-            channel="chrome"
-        )
-        page = context.pages[0] if context.pages else await context.new_page()
-        await page.goto("https://wordstat.yandex.ru/")
-        for mask in masks:
-            try:
-                await page.goto(f"https://wordstat.yandex.ru/#!/?words={mask}")
-                await page.wait_for_selector("[data-auto='phrase-count-total']", timeout=10000)
-                freq_text = await page.inner_text("[data-auto='phrase-count-total']")
-                freq = int(''.join(filter(str.isdigit, freq_text)))
-                result = {'phrase': mask, 'freq': freq, 'region': 225}
-                results.append(result)
-                with get_db_connection() as conn:
-                    conn.execute("INSERT OR REPLACE INTO frequencies (phrase, freq, region) VALUES (?, ?, ?)",
-                                 (mask, freq, 225))
-                await asyncio.sleep(1)
-            except Exception as e:
-                print(f"[!] Freq error {mask}: {e}")
-                results.append({'phrase': mask, 'freq': 0, 'region': 225})
-        await context.close()
-    return results
-
-
-async def parse_direct(freq_results):
-    """Парсинг прогнозов из Яндекс Директ - заглушка, добавляем моковые данные"""
-    # Добавляем тестовые данные для проверки работы
-    for r in freq_results:
-        # Мок данные на основе частотности
-        cpc = 10 + (r['freq'] // 1000) if r['freq'] > 0 else 0
-        impressions = r['freq'] // 2 if r['freq'] > 0 else 0
-        budget = cpc * impressions // 100 if impressions > 0 else 0
-        r.update({'cpc': cpc, 'impressions': impressions, 'budget': budget})
-        with get_db_connection() as conn:
-            conn.execute("INSERT OR REPLACE INTO forecasts (phrase, cpc, impressions, budget, freq_ref) VALUES (?, ?, ?, ?, ?)",
-                         (r['phrase'], cpc, impressions, budget, r['phrase']))
+    # Merge frequency and forecast data
+    for freq_r in freq_results:
+        forecast = next((f for f in forecasts if f['phrase'] == freq_r['phrase']), None)
+        if forecast:
+            freq_r.update({
+                'cpc': forecast['cpc'],
+                'impressions': forecast['impressions'],
+                'budget': forecast['budget']
+            })
+        else:
+            freq_r.update({'cpc': 0.0, 'impressions': 0, 'budget': 0.0})
+    
     return freq_results
 
 
 class ParserWorkerThread(QThread):
-    """Поток для выполнения парсинга с inline сервисами"""
-    results_signal = Signal(list)
-    log_signal = Signal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
-    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
-    log_message = Signal(str)
-    error_signal = Signal(str)
-    finished_signal = Signal(bool, str)
+    """Поток для выполнения парсинга через services"""
+    results_signal = pyqtSignal(list)
+    log_signal = pyqtSignal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
+    stats_signal = pyqtSignal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
+    log_message = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(bool, str)
     
     def __init__(self, queries):
         super().__init__()
@@ -145,7 +113,7 @@ class ParserWorkerThread(QThread):
             
             # Парсинг прогнозов Direct
             self.log_message.emit("Парсинг прогнозов Direct...")
-            direct_results = loop.run_until_complete(parse_direct(freq_results))
+            direct_results = loop.run_until_complete(parse_direct_forecast(freq_results))
             self.log_message.emit("Прогнозы получены")
             
             # Кластеризация

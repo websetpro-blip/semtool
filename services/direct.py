@@ -1,28 +1,28 @@
+# -*- coding: utf-8 -*-
 """
-Yandex.Direct budget forecasting service for turbo parser.
-Fetches CPC, impressions, and budget estimates for phrases.
+Yandex.Direct forecast service - budget prediction for phrases.
 """
-
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+import json
+from typing import Any
 
 from ..core.db import get_db_connection
 
 
 async def forecast_batch_direct(
-    phrases: list[dict],
+    phrases: list[str],
     session_page=None,
     chunk_size: int = 100,
     region: int = 225
 ) -> list[dict]:
     """
-    Forecast budget from Yandex.Direct for phrases.
+    Get budget forecast from Yandex.Direct for batch of phrases.
     
     Args:
-        phrases: List of dicts with 'phrase', 'freq', 'region'
-        session_page: Playwright page with active session
+        phrases: List of phrases to forecast
+        session_page: Playwright page with active Yandex session (from autologin)
         chunk_size: Number of phrases per batch (Direct limit: ~100/min)
         region: Yandex region ID
     
@@ -31,9 +31,10 @@ async def forecast_batch_direct(
     """
     results = []
     
+    # Import only when needed
     from playwright.async_api import async_playwright
     
-    # If no session, create temporary browser
+    # If no session provided, create temporary browser
     own_browser = session_page is None
     if own_browser:
         playwright = await async_playwright().start()
@@ -48,43 +49,40 @@ async def forecast_batch_direct(
         for i in range(0, len(phrases), chunk_size):
             batch = phrases[i:i + chunk_size]
             
-            for phrase_data in batch:
-                phrase = phrase_data['phrase']
-                freq = phrase_data.get('freq', 0)
-                
+            for phrase in batch:
                 try:
-                    # Navigate to Direct forecast page
-                    # Note: This URL structure is approximate - adjust based on actual Direct interface
-                    url = f"https://direct.yandex.ru/registered/main.pl?cmd=advancedForecast&phrase={phrase}&region={region}"
-                    await session_page.goto(url, timeout=15000)
+                    # Navigate to Direct forecast tool
+                    url = f"https://direct.yandex.ru/registered/main.pl?cmd=forecastByWords&words={phrase}"
+                    await session_page.goto(url, timeout=20000)
                     
-                    # Wait for forecast data
+                    # Wait for forecast results to load
                     await session_page.wait_for_selector(
-                        ".forecast-result, .forecast-table, .b-forecast",
-                        timeout=10000
+                        ".forecast-table, [data-bem*='forecast']",
+                        timeout=15000
                     )
                     
                     # Extract CPC (cost per click)
                     try:
-                        cpc_element = session_page.locator("[data-name='cpc'], .cpc-value, .b-forecast__cpc")
-                        cpc_text = await cpc_element.first.inner_text(timeout=3000)
-                        cpc = float(''.join(filter(lambda x: x.isdigit() or x == '.', cpc_text.replace(',', '.'))))
+                        cpc_element = session_page.locator(
+                            ".forecast-table__cpc, [data-test-id='cpc']"
+                        )
+                        cpc_text = await cpc_element.first.inner_text(timeout=5000)
+                        cpc = float(''.join(filter(lambda x: x.isdigit() or x == '.', cpc_text)))
                     except:
-                        # Fallback: estimate CPC from freq (rough heuristic)
-                        cpc = estimate_cpc_from_freq(freq)
+                        cpc = 0.0
                     
-                    # Extract impressions
+                    # Extract impressions (показы)
                     try:
-                        imp_element = session_page.locator("[data-name='impressions'], .impressions-value")
-                        imp_text = await imp_element.first.inner_text(timeout=3000)
-                        impressions = int(''.join(filter(str.isdigit, imp_text)))
+                        impr_element = session_page.locator(
+                            ".forecast-table__impressions, [data-test-id='impressions']"
+                        )
+                        impr_text = await impr_element.first.inner_text(timeout=5000)
+                        impressions = int(''.join(filter(str.isdigit, impr_text)))
                     except:
-                        # Fallback: use freq as approximation
-                        impressions = int(freq * 0.8) if freq > 0 else 0
+                        impressions = 0
                     
-                    # Calculate budget (CPC * clicks, estimate CTR = 2%)
-                    clicks = int(impressions * 0.02)  # 2% CTR
-                    budget = round(cpc * clicks, 2)
+                    # Calculate monthly budget (CPC * impressions * 30 days)
+                    budget = round(cpc * impressions * 30, 2)
                     
                     result = {
                         'phrase': phrase,
@@ -94,38 +92,32 @@ async def forecast_batch_direct(
                     }
                     results.append(result)
                     
-                    # Save to DB
+                    # Save to database immediately
                     with get_db_connection() as conn:
                         conn.execute(
                             """INSERT OR REPLACE INTO forecasts 
-                               (phrase, cpc, impressions, budget, freq_ref) 
-                               VALUES (?, ?, ?, ?, ?)""",
-                            (phrase, cpc, impressions, budget, phrase)
+                            (phrase, cpc, impressions, budget, region, processed) 
+                            VALUES (?, ?, ?, ?, ?, 0)""",
+                            (phrase, cpc, impressions, budget, region)
                         )
                     
-                    # Rate limiting
-                    await asyncio.sleep(0.8)
+                    # Rate limiting: ~1 req/sec = 60/min
+                    await asyncio.sleep(1.0)
                     
-                    print(f"[Direct] {phrase}: CPC {cpc}, Budget {budget}")
+                    print(f"[Direct] {phrase}: CPC={cpc:.2f} ₽, Shows={impressions:,}, Budget={budget:,.0f} ₽")
                     
                 except Exception as e:
                     print(f"[Direct ERROR] {phrase}: {e}")
-                    # Fallback to estimates
-                    cpc = estimate_cpc_from_freq(freq)
-                    impressions = int(freq * 0.8) if freq > 0 else 0
-                    clicks = int(impressions * 0.02)
-                    budget = round(cpc * clicks, 2)
-                    
                     results.append({
                         'phrase': phrase,
-                        'cpc': cpc,
-                        'impressions': impressions,
-                        'budget': budget
+                        'cpc': 0.0,
+                        'impressions': 0,
+                        'budget': 0.0
                     })
             
-            # Pause between batches
+            # Longer pause between batches
             if i + chunk_size < len(phrases):
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)
     
     finally:
         if own_browser:
@@ -136,31 +128,15 @@ async def forecast_batch_direct(
     return results
 
 
-def estimate_cpc_from_freq(freq: int) -> float:
-    """
-    Estimate CPC based on frequency (rough heuristic).
-    High freq = lower CPC (more competition)
-    Low freq = higher CPC (niche)
-    """
-    if freq > 100000:
-        return 15.0  # High competition
-    elif freq > 10000:
-        return 25.0
-    elif freq > 1000:
-        return 35.0
-    elif freq > 100:
-        return 50.0
-    else:
-        return 70.0  # Low freq, might be expensive
-
-
 async def get_saved_forecasts(region: int = 225) -> list[dict]:
     """Get all saved forecast results from database."""
     with get_db_connection() as conn:
         cursor = conn.execute(
             """SELECT phrase, cpc, impressions, budget 
-               FROM forecasts 
-               ORDER BY budget DESC"""
+            FROM forecasts 
+            WHERE region = ? 
+            ORDER BY budget DESC""",
+            (region,)
         )
         return [
             {
@@ -173,19 +149,37 @@ async def get_saved_forecasts(region: int = 225) -> list[dict]:
         ]
 
 
-async def merge_freq_and_forecast(freq_results: list[dict], forecast_results: list[dict]) -> list[dict]:
-    """Merge frequency and forecast data by phrase."""
-    # Create lookup dict for forecasts
-    forecasts = {f['phrase']: f for f in forecast_results}
+def merge_freq_and_forecast(region: int = 225) -> list[dict]:
+    """
+    Merge frequency and forecast data for export.
     
-    merged = []
-    for freq in freq_results:
-        phrase = freq['phrase']
-        forecast = forecasts.get(phrase, {})
+    Returns:
+        List of dicts with: phrase, freq, cpc, impressions, budget
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT 
+                f.phrase,
+                f.freq,
+                fc.cpc,
+                fc.impressions,
+                fc.budget
+            FROM frequencies f
+            LEFT JOIN forecasts fc ON f.phrase = fc.phrase AND f.region = fc.region
+            WHERE f.region = ?
+            ORDER BY f.freq DESC
+            """,
+            (region,)
+        )
         
-        merged.append({
-            **freq,  # phrase, freq, region
-            **forecast  # cpc, impressions, budget
-        })
-    
-    return merged
+        return [
+            {
+                'phrase': row[0],
+                'freq': row[1],
+                'cpc': row[2] or 0.0,
+                'impressions': row[3] or 0,
+                'budget': row[4] or 0.0
+            }
+            for row in cursor.fetchall()
+        ]
