@@ -33,6 +33,7 @@ def enqueue_masks(masks: Iterable[str], region: int) -> int:
                 if existing.status != 'ok':
                     existing.status = 'queued'
                     existing.freq_total = 0
+                    existing.freq_quotes = 0
                     existing.freq_exact = 0
                     existing.error = None
                     existing.attempts = 0
@@ -58,6 +59,7 @@ def list_results(status: str | None = None, limit: int = 500) -> list[dict]:
                 'region': row.region,
                 'status': row.status,
                 'freq_total': row.freq_total,
+                'freq_quotes': getattr(row, 'freq_quotes', 0),  # С поддержкой старых БД
                 'freq_exact': row.freq_exact,
                 'attempts': row.attempts,
                 'error': row.error or '',

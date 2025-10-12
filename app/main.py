@@ -1542,10 +1542,10 @@ class MainWindow(QMainWindow):
                 data.append({
                     'phrase': r['mask'],
                     'freq_total': r['freq_total'],
-                    'freq_quotes': 0,  # TODO: добавить когда будет в БД
+                    'freq_quotes': r.get('freq_quotes', 0),  # Частотность в кавычках ("WS")
                     'freq_exact': r['freq_exact'],
                     'status': r['status'],
-                    'group': ''  # TODO: добавить группировку
+                    'group': ''  # TODO: добавить группировку в Этапе 5
                 })
             
             self.keys_panel.load_data(data)
