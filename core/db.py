@@ -1,8 +1,10 @@
 ﻿from __future__ import annotations
 
 from pathlib import Path
+from contextlib import contextmanager
+import sqlite3
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, text, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,6 +23,51 @@ def ensure_schema() -> None:
     """Perform lightweight SQLite migrations for the tasks table."""
     engine = ensure_schema.engine  # type: ignore[attr-defined]
     inspector = inspect(engine)
+    
+    # Create new tables for turbo parser pipeline
+    with engine.begin() as conn:
+        # Frequencies table (Wordstat results)
+        if not inspector.has_table('frequencies'):
+            conn.execute(text('''
+                CREATE TABLE frequencies (
+                    phrase TEXT PRIMARY KEY,
+                    freq INTEGER,
+                    region INTEGER DEFAULT 225,
+                    processed BOOLEAN DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_freq_phrase ON frequencies(phrase)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_freq_processed ON frequencies(processed)"))
+        
+        # Forecasts table (Direct budget results)
+        if not inspector.has_table('forecasts'):
+            conn.execute(text('''
+                CREATE TABLE forecasts (
+                    phrase TEXT PRIMARY KEY,
+                    cpc REAL,
+                    impressions INTEGER,
+                    budget REAL,
+                    freq_ref TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (freq_ref) REFERENCES frequencies(phrase)
+                )
+            '''))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_forecast_phrase ON forecasts(phrase)"))
+        
+        # Clusters table (grouped/clustered results)
+        if not inspector.has_table('clusters'):
+            conn.execute(text('''
+                CREATE TABLE clusters (
+                    stem TEXT PRIMARY KEY,
+                    phrases TEXT,
+                    avg_freq REAL,
+                    total_budget REAL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cluster_stem ON clusters(stem)"))
+    
     if not inspector.has_table('tasks'):
         return
 
@@ -100,7 +147,24 @@ def ensure_schema() -> None:
             conn.execute(text('ALTER TABLE tasks ADD COLUMN params TEXT'))
 
 
-engine = create_engine(DATABASE_URL, echo=False, future=True)
+engine = create_engine(
+    DATABASE_URL, 
+    echo=False, 
+    future=True,
+    connect_args={"check_same_thread": False}
+)
+
+
+# Enable WAL mode for better concurrency
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 ensure_schema.engine = engine  # type: ignore[attr-defined]
 
 SessionLocal = sessionmaker(
@@ -111,4 +175,23 @@ SessionLocal = sessionmaker(
     expire_on_commit=False,
 )
 
-__all__ = ['Base', 'engine', 'SessionLocal', 'DB_PATH', 'ensure_schema']
+
+@contextmanager
+def get_db_connection():
+    """Context manager for direct SQLite connection (for batch operations)."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.row_factory = sqlite3.Row  # Access columns by name
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+__all__ = ['Base', 'engine', 'SessionLocal', 'DB_PATH', 'ensure_schema', 'get_db_connection']
