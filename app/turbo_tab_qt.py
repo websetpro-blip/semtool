@@ -66,10 +66,17 @@ def cluster_results(results):
 async def parse_frequency(masks):
     """Парсинг частотности из Wordstat"""
     results = []
+    from pathlib import Path
+    profile_path = Path(__file__).parent.parent.parent / ".profiles" / "wordstat_main"
+    
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        page = await context.new_page()
+        # Используем авторизованный профиль Chrome
+        context = await p.chromium.launch_persistent_context(
+            str(profile_path),
+            headless=False,
+            channel="chrome"
+        )
+        page = context.pages[0] if context.pages else await context.new_page()
         await page.goto("https://wordstat.yandex.ru/")
         for mask in masks:
             try:
@@ -86,36 +93,22 @@ async def parse_frequency(masks):
             except Exception as e:
                 print(f"[!] Freq error {mask}: {e}")
                 results.append({'phrase': mask, 'freq': 0, 'region': 225})
-        await browser.close()
+        await context.close()
     return results
 
 
 async def parse_direct(freq_results):
-    """Парсинг прогнозов из Яндекс Директ"""
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        page = await context.new_page()
-        await page.goto("https://direct.yandex.ru/")
-        for r in freq_results:
-            try:
-                await page.goto(f"https://direct.yandex.ru/forecast/?phrase={r['phrase']}")
-                await page.wait_for_selector(".forecast-table", timeout=10000)
-                cpc_text = await page.inner_text(".cpc-value") or "0"
-                impressions_text = await page.inner_text(".impressions-value") or "0"
-                budget_text = await page.inner_text(".budget-value") or "0"
-                cpc = float(cpc_text.replace(',', '.').replace(' ', ''))
-                impressions = int(impressions_text.replace(' ', ''))
-                budget = float(budget_text.replace(',', '.').replace(' ', ''))
-                r.update({'cpc': cpc, 'impressions': impressions, 'budget': budget})
-                with get_db_connection() as conn:
-                    conn.execute("INSERT OR REPLACE INTO forecasts (phrase, cpc, impressions, budget, freq_ref) VALUES (?, ?, ?, ?, ?)",
-                                 (r['phrase'], cpc, impressions, budget, r['phrase']))
-                await asyncio.sleep(1)
-            except Exception as e:
-                print(f"[!] Direct error {r['phrase']}: {e}")
-                r.update({'cpc': 0, 'impressions': 0, 'budget': 0})
-        await browser.close()
+    """Парсинг прогнозов из Яндекс Директ - заглушка, добавляем моковые данные"""
+    # Добавляем тестовые данные для проверки работы
+    for r in freq_results:
+        # Мок данные на основе частотности
+        cpc = 10 + (r['freq'] // 1000) if r['freq'] > 0 else 0
+        impressions = r['freq'] // 2 if r['freq'] > 0 else 0
+        budget = cpc * impressions // 100 if impressions > 0 else 0
+        r.update({'cpc': cpc, 'impressions': impressions, 'budget': budget})
+        with get_db_connection() as conn:
+            conn.execute("INSERT OR REPLACE INTO forecasts (phrase, cpc, impressions, budget, freq_ref) VALUES (?, ?, ?, ?, ?)",
+                         (r['phrase'], cpc, impressions, budget, r['phrase']))
     return freq_results
 
 
