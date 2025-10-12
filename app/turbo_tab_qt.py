@@ -9,7 +9,7 @@ import csv
 import json
 import time
 from datetime import datetime
-from PySide6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
     QTableWidget, QTableWidgetItem, QFileDialog, QHeaderView,
@@ -82,12 +82,12 @@ async def parse_direct_forecast(freq_results, region=225):
 
 class ParserWorkerThread(QThread):
     """Поток для выполнения парсинга через services"""
-    results_signal = pyqtSignal(list)
-    log_signal = pyqtSignal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
-    stats_signal = pyqtSignal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
-    log_message = pyqtSignal(str)
-    error_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(bool, str)
+    results_signal = Signal(list)
+    log_signal = Signal(str, str, str, str, str, str)  # время, аккаунт, фраза, частота, статус, скорость
+    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
+    log_message = Signal(str)
+    error_signal = Signal(str)
+    finished_signal = Signal(bool, str)
     
     def __init__(self, queries):
         super().__init__()
