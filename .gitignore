@@ -6,5 +6,11 @@ results/
 *.csv
 *.log
 *.db
+*.db-*
+*.db-shm
+*.db-wal
 .profiles/
 configs/accounts.json
+runtime/
+!runtime/! Readme.txt
+!runtime/! Readme.txt.bak
