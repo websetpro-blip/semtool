@@ -131,6 +131,40 @@ async def parse_batch_wordstat(
                     url = f"https://wordstat.yandex.ru/#!/?words={mask}&regions={region}"
                     await session_page.goto(url, timeout=15000)
                     
+                    # КРИТИЧНО: Ждем загрузку URL и ответ от сервера
+                    await session_page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
+                    
+                    # Ждем ответ с данными (ВАЖНО для SPA)
+                    try:
+                        await session_page.wait_for_response(
+                            lambda r: "wordstat.yandex.ru" in r.url and r.ok,
+                            timeout=10000
+                        )
+                    except:
+                        pass  # Может не быть XHR на первой загрузке
+                    
+                    # Проверяем не открылось ли в iframe (challenge)
+                    iframe_selectors = [
+                        'iframe[src*="challenge"]',
+                        'iframe[name*="passp:challenge"]',
+                        'iframe[src*="passport"]'
+                    ]
+                    
+                    for iframe_sel in iframe_selectors:
+                        if await session_page.locator(iframe_sel).count() > 0:
+                            print(f"[Wordstat] Обнаружен challenge в iframe для {mask}")
+                            # Используем frame_locator для работы с iframe
+                            frame = session_page.frame_locator(iframe_sel)
+                            answer_field = frame.locator('input[name="answer"], input[type="text"]')
+                            
+                            # Если есть поле ответа - нужно его заполнить
+                            if await answer_field.count() > 0:
+                                # Здесь должен быть ответ на секретный вопрос из аккаунта
+                                print(f"[Wordstat] ВНИМАНИЕ: Требуется ответ на секретный вопрос!")
+                                # Пропускаем эту фразу
+                                results.append({'phrase': mask, 'freq': 0, 'region': region})
+                                continue
+                    
                     # Wait for results to load
                     await session_page.wait_for_selector(
                         "[data-auto='phrase-count-total'], .b-phrase-count",

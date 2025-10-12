@@ -198,6 +198,47 @@ class TurboWordstatParser:
         
         for idx, phrase in enumerate(phrases):
             try:
+                # КРИТИЧНО: Переход на Wordstat с правильным URL
+                url = f"https://wordstat.yandex.ru/#!/?words={quote(phrase)}&regions=225"
+                await page.goto(url, timeout=30000)
+                
+                # КРИТИЧНО: Ждем загрузку URL и ответ от сервера (из файла 44)
+                await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
+                
+                # Ждем ответ с данными (ВАЖНО для SPA)
+                try:
+                    await page.wait_for_response(
+                        lambda r: "wordstat.yandex.ru" in r.url and r.ok,
+                        timeout=10000
+                    )
+                except:
+                    pass  # Может не быть XHR на первой загрузке
+                
+                # Проверяем не открылось ли в iframe (challenge)
+                iframe_selectors = [
+                    'iframe[src*="challenge"]',
+                    'iframe[name*="passp:challenge"]',
+                    'iframe[src*="passport"]'
+                ]
+                
+                for iframe_sel in iframe_selectors:
+                    if await page.locator(iframe_sel).count() > 0:
+                        print(f"[Tab {tab_id}] Обнаружен challenge в iframe для {phrase}")
+                        # Используем frame_locator для работы с iframe (из файла 44)
+                        frame = page.frame_locator(iframe_sel)
+                        answer_field = frame.locator('input[name="answer"], input[type="text"]')
+                        
+                        # Если есть поле ответа и у нас есть секретный ответ
+                        if await answer_field.count() > 0 and self.account and hasattr(self.account, 'secret_answer'):
+                            await answer_field.fill(self.account.secret_answer)
+                            submit_btn = frame.locator('button[type="submit"], button:has-text("Продолжить")')
+                            if await submit_btn.count() > 0:
+                                await submit_btn.click()
+                                await asyncio.sleep(2)
+                        else:
+                            print(f"[Tab {tab_id}] ВНИМАНИЕ: Требуется ответ на секретный вопрос!")
+                            continue
+                
                 # Проверяем не перекинуло ли на авторизацию
                 if await self.auth_handler.check_auth_required(page):
                     print(f"[Tab {tab_id}] Обнаружен редирект на авторизацию, обрабатываем...")
@@ -216,61 +257,59 @@ class TurboWordstatParser:
                     
                     if not auth_success:
                         print(f"[Tab {tab_id}] ERROR: Не удалось авторизоваться автоматически")
-                        # Можно попробовать продолжить, может куки сохранились
+                        continue
                     else:
                         print(f"[Tab {tab_id}] Авторизация успешна, продолжаем парсинг")
-                        await asyncio.sleep(2)  # Даем странице загрузиться после авторизации
+                        await asyncio.sleep(2)
+                        # Повторяем переход на wordstat после авторизации
+                        await page.goto(url, timeout=30000)
+                        await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
                 
-                # Вводим фразу
-                input_found = False
-                selectors = [
-                    'input[name="text"]',
-                    'input[type="search"]',
-                    'input[placeholder*="слов"]',
-                    '.b-form-input__input'
+                # Ждем появление данных о частотности
+                freq_selectors = [
+                    '[data-auto="phrase-count-total"]',
+                    '.b-phrase-count__total',
+                    '.b-word-statistics__info-text',
+                    'td.b-word-statistics__td:has-text("Показов в месяц")'
                 ]
                 
-                for selector in selectors:
+                frequency = None
+                for selector in freq_selectors:
                     try:
-                        await page.wait_for_selector(selector, timeout=1000)
-                        await page.click(selector)
-                        await asyncio.sleep(0.05)
-                        await page.click(selector, click_count=3)
-                        await page.keyboard.press("Delete")
-                        await asyncio.sleep(0.05)
-                        await page.type(selector, phrase, delay=10)
-                        await asyncio.sleep(0.1)
-                        await page.keyboard.press("Enter")
-                        input_found = True
-                        break
+                        await page.wait_for_selector(selector, timeout=5000)
+                        freq_text = await page.locator(selector).first.inner_text()
+                        # Парсим число из текста (убираем пробелы и запятые)
+                        frequency = int(''.join(filter(str.isdigit, freq_text)))
+                        if frequency > 0:
+                            break
                     except:
                         continue
                 
-                if not input_found:
-                    print(f"[Tab {tab_id}] ERROR: Поле ввода не найдено")
-                    continue
-                
-                # Ждем ответ
-                await asyncio.sleep(self.aimd.get_delay())
-                
-                # Проверяем результат
-                if phrase in self.results:
+                if frequency:
+                    print(f"[Tab {tab_id}] OK {phrase} = {frequency:,}")
                     tab_results.append({
                         'query': phrase,
-                        'frequency': self.results[phrase],
+                        'frequency': frequency,
                         'timestamp': datetime.now().isoformat()
                     })
+                    self.results[phrase] = frequency
+                    self.total_processed += 1
+                    self.aimd.on_success()
+                else:
+                    print(f"[Tab {tab_id}] ERROR: Не удалось получить частотность для {phrase}")
+                    self.aimd.on_error()
                 
             except Exception as e:
-                print(f"[Tab {tab_id}] ERROR: {e}")
+                print(f"[Tab {tab_id}] ERROR для '{phrase}': {e}")
                 reload_count += 1
+                self.aimd.on_error()
                 if reload_count > 3:
                     print(f"[Tab {tab_id}] Слишком много ошибок, перезагрузка...")
                     await page.reload()
                     reload_count = 0
                 
-            # Минимальная пауза между запросами
-            await asyncio.sleep(0.1)
+            # Минимальная пауза между запросами с учетом AIMD
+            await asyncio.sleep(self.aimd.get_delay())
         
         return tab_results
     
