@@ -104,28 +104,51 @@ class ParserWorkerThread(QThread):
         message = ""
         
         try:
-            # ИСПОЛЬЗУЕМ РАБОЧИЙ ПАРСЕР 526.3 фраз/мин!
-            from ..workers.turbo_parser_working import parse_wordstat
+            # ВАЖНО: Используем турбо-парсер с аккаунтами из базы!
+            from ..workers.turbo_parser_integration import TurboWordstatParser
+            from ..services import accounts as account_service
             
-            self.log_message.emit("[OK] Используем РАБОЧИЙ turbo_parser (526.3 фраз/мин)")
-            self.log_message.emit(f"[OK] Начинаю парсинг {len(self.queries)} фраз...")
+            # Получаем первый рабочий аккаунт из базы
+            all_accounts = account_service.list_accounts()
+            active_accounts = [a for a in all_accounts if a.status == 'ok']
             
-            # Запускаем РАБОЧИЙ парсер с колбэком для логирования
-            freq_results_dict = loop.run_until_complete(
-                parse_wordstat(self.queries, log_callback=lambda msg: self.log_message.emit(msg))
+            if not active_accounts:
+                self.error_signal.emit("Нет активных аккаунтов в базе!")
+                return
+            
+            # Используем первый активный аккаунт
+            account = active_accounts[0]
+            self.log_message.emit(f"Используем аккаунт: {account.name}")
+            
+            # Создаём турбо-парсер с аккаунтом
+            parser = TurboWordstatParser(
+                account=account,
+                headless=False,  # Видимый режим
+                visual_mode=False
             )
             
-            # Преобразуем результаты для совместимости с GUI
+            # Запускаем парсинг через турбо-парсер
+            self.log_message.emit("Парсинг частотности...")
+            freq_results = loop.run_until_complete(parser.parse_batch(self.queries))
+            self.log_message.emit(f"Частотность: {len(freq_results)} фраз")
+            
+            # Закрываем парсер
+            loop.run_until_complete(parser.close())
+            
+            # Результаты уже получены от турбо-парсера
+            # freq_results содержит данные вида: [{'query': str, 'frequency': int, 'timestamp': str}, ...]
+            
+            # Преобразуем для совместимости
             clustered = []
-            for phrase, freq in freq_results_dict.items():
+            for r in freq_results:
                 clustered.append({
-                    'phrase': phrase,
-                    'freq': freq,
+                    'phrase': r.get('query', ''),
+                    'freq': r.get('frequency', 0),
                     'region': 225,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': r.get('timestamp', '')
                 })
             
-            self.log_message.emit(f"[OK] Получено результатов: {len(clustered)}")
+            self.log_message.emit(f"Получено результатов: {len(clustered)}")
             
             # Экспорт в CSV
             csv_path = Path("data") / "results.csv"

@@ -26,9 +26,9 @@ class AIMDController:
     """AIMD регулятор скорости для избежания банов"""
     
     def __init__(self):
-        self.delay_ms = 150  # начальная задержка
-        self.min_delay = 50
-        self.max_delay = 500
+        self.delay_ms = 50  # начальная задержка (уменьшена для скорости)
+        self.min_delay = 30
+        self.max_delay = 300
         self.success_count = 0
         self.error_count = 0
         
@@ -64,113 +64,204 @@ class TurboWordstatParser:
         self.pages = []  # мульти-табы
         self.results = {}
         self.aimd = AIMDController()
-        self.num_tabs = 3  # количество вкладок для параллельного парсинга (уменьшено с 10)
-        self.num_browsers = 1  # количество видимых браузеров (уменьшено с 3)
+        self.num_tabs = 1  # количество вкладок для стабильной работы
+        self.num_browsers = 1  # количество видимых браузеров
         self.visual_manager = None  # Менеджер визуальных браузеров
         self.db_path = Path("C:/AI/yandex/semtool/data/semtool.db")
         self.auth_handler = AutoAuthHandler()  # Обработчик авторизации
+        
+        # Загружаем данные авторизации из accounts.json если нет в аккаунте
+        if self.account:
+            self._load_auth_data()
         
         # Статистика
         self.total_processed = 0
         self.total_errors = 0
         self.start_time = None
+    
+    def _load_auth_data(self):
+        """Загружаем данные авторизации из accounts.json"""
+        try:
+            accounts_json_path = Path("C:/AI/yandex/semtool/configs/accounts.json")
+            if not accounts_json_path.exists():
+                accounts_json_path = Path("C:/AI/yandex/configs/accounts.json")
+            if not accounts_json_path.exists():
+                accounts_json_path = Path("C:/AI/accounts.json")
+            
+            if accounts_json_path.exists():
+                with open(accounts_json_path, 'r', encoding='utf-8') as f:
+                    accounts_data = json.load(f)
+                
+                # Ищем данные для нашего аккаунта
+                for acc_data in accounts_data:
+                    if acc_data.get('login') == self.account.name:
+                        # Заполняем данные если их нет
+                        if not hasattr(self.account, 'password') or not self.account.password:
+                            self.account.password = acc_data.get('password', '')
+                        if not hasattr(self.account, 'secret_answer') or not self.account.secret_answer:
+                            self.account.secret_answer = acc_data.get('secret_answer', '')
+                        if not hasattr(self.account, 'login') or not self.account.login:
+                            self.account.login = acc_data.get('login', self.account.name)
+                        print(f"[AUTH] Загружены данные для {self.account.name}")
+                        break
+        except Exception as e:
+            print(f"[AUTH] Ошибка загрузки accounts.json: {e}")
         
     async def init_browser(self):
-        """Инициализация браузера с CDP или новым профилем"""
-        playwright = await async_playwright().start()
+        """Инициализация браузера - ПОДКЛЮЧЕНИЕ через CDP как в инструкциях"""
+        self.playwright = await async_playwright().start()
+        
+        # КРИТИЧНО из инструкций: СНАЧАЛА нужно запустить Chrome с CDP!
+        print("[TURBO] Пытаюсь подключиться к Chrome через CDP на порту 9222...")
+        print("[TURBO] Если не работает, запустите START_CHROME_CDP.bat!")
         
         # Пробуем подключиться к существующему Chrome через CDP
         try:
-            self.browser = await playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
+            self.browser = await self.playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
             self.context = self.browser.contexts[0]
-            print("[TURBO] Подключен к Chrome через CDP на порту 9222")
-        except:
-            # Запускаем новый браузер с профилем аккаунта
-            if self.account and self.account.profile_path:
-                # Обрабатываем относительные пути типа ".profiles/dsmismirnov"
-                if self.account.profile_path.startswith(".profiles"):
-                    profile_path = str(Path("C:/AI/yandex") / self.account.profile_path).replace("\\", "/")
-                else:
-                    profile_path = str(Path(self.account.profile_path).absolute()).replace("\\", "/")
+            print("[TURBO] Успешно подключен к Chrome через CDP!")
+            
+            # Проверяем что есть открытые вкладки
+            if not self.context.pages:
+                print("[TURBO] Нет открытых вкладок, создаю новую...")
+                page = await self.context.new_page()
+                await page.goto("https://wordstat.yandex.ru", wait_until="domcontentloaded")
             else:
-                # Если нет профиля, используем имя аккаунта
-                if self.account and self.account.name:
-                    profile_path = str(Path(f"C:/AI/yandex/.profiles/{self.account.name}").absolute()).replace("\\", "/")
-                else:
-                    profile_path = str(Path("C:/AI/yandex/.profiles/default").absolute()).replace("\\", "/")
-            proxy = None
+                print(f"[TURBO] Найдено {len(self.context.pages)} открытых вкладок")
+        except Exception as e:
+            print(f"\n[ERROR] Не удалось подключиться к Chrome через CDP!")
+            print(f"[ERROR] Ошибка: {e}")
+            print("\nПожалуйста:")
+            print("1. Запустите START_CHROME_CDP.bat")
+            print("2. Убедитесь что Chrome открылся")
+            print("3. Попробуйте снова\n")
             
-            if self.account and self.account.proxy:
-                # Парсим прокси формата http://user:pass@ip:port
-                proxy_parts = self.account.proxy.replace("http://", "").split("@")
-                if len(proxy_parts) == 2:
-                    auth, server = proxy_parts
-                    user, password = auth.split(":")
-                    proxy = {
-                        "server": f"http://{server}",
-                        "username": user,
-                        "password": password
-                    }
+            # Проверяем, может Chrome не запущен?
+            import subprocess
+            try:
+                # Пытаемся автоматически запустить Chrome
+                print("[TURBO] Пытаюсь запустить Chrome с CDP...")
+                chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+                profile_path = r"C:\AI\yandex\.profiles\wordstat_main"
+                
+                subprocess.Popen([
+                    chrome_path,
+                    f"--remote-debugging-port=9222",
+                    f"--user-data-dir={profile_path}",
+                    "https://wordstat.yandex.ru"
+                ])
+                
+                # Ждем запуска Chrome
+                await asyncio.sleep(3)
+                
+                # Повторная попытка подключения
+                self.browser = await self.playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
+                self.context = self.browser.contexts[0]
+                print("[TURBO] Chrome запущен и подключен!")
+            except Exception as e2:
+                print(f"[ERROR] Не удалось запустить Chrome автоматически: {e2}")
+                raise Exception("Не удалось подключиться к Chrome. Запустите START_CHROME_CDP.bat")
+
             
-            # Убеждаемся что профиль существует
-            profile_dir = Path(profile_path)
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            print(f"[TURBO] Используем профиль: {profile_path}")
-            
-            self.context = await playwright.chromium.launch_persistent_context(
-                user_data_dir=profile_path,
-                channel="chrome",  # Используем системный Chrome вместо Chromium
-                headless=self.headless,
-                proxy=proxy,
-                viewport={"width": 1280, "height": 900},
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-renderer-backgrounding",
-                    "--disable-features=TranslateUI",
-                    "--disable-ipc-flooding-protection",
-                    "--start-maximized" if not self.headless else "",
-                ]
-            )
-            self.browser = self.context.browser
-            print(f"[TURBO] Запущен новый браузер с профилем {profile_path}")
+            # При CDP подключении профиль уже используется запущенным Chrome
     
     async def setup_tabs(self):
-        """Создание мульти-табов для параллельного парсинга"""
-        print(f"[TURBO] Создание {self.num_tabs} вкладок...")
+        """Настройка всех вкладок СРАЗУ (из финального парсера)"""
+        print(f"[TURBO] Подготовка {self.num_tabs} вкладок...")
         
-        # Получаем существующие вкладки
         existing_pages = self.context.pages
         
-        # Создаем новые если нужно
+        # КРИТИЧНО: Создаем ВСЕ недостающие вкладки СРАЗУ
+        print(f"[TURBO] Существующих вкладок: {len(existing_pages)}, нужно: {self.num_tabs}")
+        
         for i in range(len(existing_pages), self.num_tabs):
+            print(f"[TURBO] Создаю вкладку {i+1}...")
             page = await self.context.new_page()
             existing_pages.append(page)
         
-        # Используем нужное количество
         self.pages = existing_pages[:self.num_tabs]
-        
-        # КРИТИЧНО из файла 45: словарь для маппинга вкладок
         self.page_mapping = {}
         
-        # Открываем Wordstat на всех вкладках
+        print(f"[TURBO] Загружаем Wordstat на {len(self.pages)} вкладках...")
+        
+        # Загружаем Wordstat на ВСЕХ вкладках
         for i, page in enumerate(self.pages):
-            try:
-                # ИСПРАВЛЕНИЕ из файла 45: правильная загрузка и ожидание URL
-                await page.goto("https://wordstat.yandex.ru", wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
+            self.page_mapping[i] = page
+            
+            if "wordstat.yandex.ru" not in page.url:
+                print(f"[TURBO] Tab {i}: Открываю Wordstat...")
+                try:
+                    await page.goto("https://wordstat.yandex.ru", timeout=15000)
+                    print(f"[TURBO] Tab {i}: Wordstat открыт")
+                except Exception as e:
+                    print(f"[TURBO] Tab {i}: Ошибка: {str(e)[:50]}")
                 
-                self.page_mapping[i] = page  # Сохраняем маппинг tab_id -> page
-                await asyncio.sleep(0.5)  # небольшая пауза между открытиями
-                print(f"[TURBO] Tab {i}: Wordstat загружен и готов")
-            except Exception as e:
-                print(f"[TURBO] Tab {i}: Ошибка загрузки - {e}")
+                # Пауза между загрузками чтобы не триггерить защиту
+                await asyncio.sleep(2)
+            else:
+                print(f"[TURBO] Tab {i}: Wordstat уже открыт")
+        
+        print(f"[TURBO] ВСЕ {len(self.pages)} вкладок готовы к работе!")
         
         # Настраиваем перехват ответов на всех вкладках
         for i, page in enumerate(self.pages):
             page.on("response", lambda response, tab_id=i: asyncio.create_task(
                 self.handle_response(response, tab_id)
             ))
+    
+    async def wait_wordstat_ready(self, page):
+        """Ожидание полной загрузки Wordstat (из файла 46)"""
+        try:
+            # 1) Базовая загрузка документа
+            await page.wait_for_load_state('domcontentloaded', timeout=30000)
+            
+            # 2) Проверяем, не перебросило ли на паспорт
+            current_url = page.url
+            if "passport.yandex" in current_url or "passport.ya.ru" in current_url:
+                print(f"[AUTH] Обнаружена страница авторизации!")
+                
+                # Попытаемся авторизоваться
+                if self.auth_handler and self.account:
+                    account_data = {
+                        'login': self.account.login if hasattr(self.account, 'login') else self.account.name,
+                        'password': self.account.password if hasattr(self.account, 'password') else '',
+                        'secret_answer': self.account.secret_answer if hasattr(self.account, 'secret_answer') else ''
+                    }
+                    
+                    success = await self.auth_handler.handle_auth_redirect(page, account_data)
+                    if success:
+                        print(f"[AUTH] Авторизация успешна")
+                        # После авторизации переходим на wordstat
+                        await page.goto("https://wordstat.yandex.ru", wait_until="domcontentloaded", timeout=30000)
+                    else:
+                        print(f"[AUTH] Ошибка авторизации")
+            
+            # 3) Ждём URL Wordstat
+            await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=30000)
+            
+            # 4) Дождаться сетевой активности для SPA
+            try:
+                await page.wait_for_load_state('networkidle', timeout=15000)
+            except:
+                pass  # Может не дождаться networkidle, это не критично
+            
+            # 5) Явный DOM-гейт - ждём поле поиска
+            search_selectors = [
+                'input[type="search"]',
+                '[role="searchbox"]',
+                'input.b-form-input__input',
+                'input[name="text"]'
+            ]
+            
+            for selector in search_selectors:
+                try:
+                    await page.wait_for_selector(selector, timeout=5000)
+                    break
+                except:
+                    continue
+            
+        except Exception as e:
+            print(f"[WAIT] Ошибка ожидания загрузки Wordstat: {e}")
     
     async def handle_response(self, response, tab_id):
         """Перехват XHR ответов от Wordstat API"""
@@ -199,138 +290,118 @@ class TurboWordstatParser:
             pass  # Игнорируем ошибки парсинга ответов
     
     async def process_tab_worker(self, page, phrases, tab_id):
-        """Воркер для обработки фраз на одной вкладке"""
+        """Воркер для обработки фраз на одной вкладке (рабочая версия из parse_5_accounts_cdp.py)"""
         tab_results = []
-        reload_count = 0
+        results_lock = asyncio.Lock()
         
-        for idx, phrase in enumerate(phrases):
-            try:
-                # КРИТИЧНО: Переход на Wordstat с правильным URL
-                url = f"https://wordstat.yandex.ru/#!/?words={quote(phrase)}&regions=225"
-                await page.goto(url, timeout=30000)
-                
-                # КРИТИЧНО из файла 45: полное ожидание загрузки
-                await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
-                
-                # Дополнительное ожидание из файла 45: ждём либо ответ, либо таблицу
+        # Настраиваем обработчик ответов для перехвата частотностей
+        async def handle_response(response):
+            """Перехватываем ответы API и извлекаем частотности"""
+            if "/wordstat/api" in response.url and response.status == 200:
                 try:
-                    # Вариант 1: ждём сетевой ответ
-                    await page.wait_for_response(
-                        lambda r: "wordstat.yandex.ru" in r.url and r.ok,
-                        timeout=10000
-                    )
+                    data = await response.json()
+                    
+                    # Извлекаем частотность из структуры данных
+                    frequency = None
+                    if 'data' in data and isinstance(data['data'], dict) and 'totalValue' in data['data']:
+                        frequency = data['data']['totalValue']
+                    elif 'totalValue' in data:
+                        frequency = data['totalValue']
+                    
+                    if frequency is not None:
+                        # Получаем маску из тела POST запроса
+                        post_data = response.request.post_data
+                        if post_data:
+                            request_data = json.loads(post_data)
+                            phrase = request_data.get("searchValue", "").strip()
+                            
+                            if phrase:
+                                async with results_lock:
+                                    self.results[phrase] = frequency
+                                    tab_results.append({'query': phrase, 'frequency': frequency})
+                                    self.total_processed += 1
+                                    self.aimd.on_success()
+                                print(f"[Tab {tab_id}] OK: {phrase} = {frequency:,} показов")
+                except Exception as e:
+                    pass  # Игнорируем ошибки парсинга
+        
+        # Подключаем обработчик к странице
+        page.on("response", handle_response)
+        
+        # Загружаем и ждем полной готовности Wordstat
+        if "wordstat.yandex.ru" not in page.url:
+            print(f"[Tab {tab_id}] Открываю Wordstat...")
+            try:
+                await page.goto("https://wordstat.yandex.ru", timeout=15000)
+                # Ждем полной загрузки страницы
+                await page.wait_for_load_state('domcontentloaded')
+                # networkidle может долго ждать, используем с малым таймаутом
+                try:
+                    await page.wait_for_load_state('networkidle', timeout=3000)
                 except:
-                    # Вариант 2: ждём появление таблицы с результатами
-                    try:
-                        await page.locator("table >> tbody >> tr").first.wait_for(timeout=10000)
-                    except:
-                        pass  # Может не быть данных на первой загрузке
-                
-                # УЛУЧШЕННАЯ обработка iframe challenge из файла 45
-                if await page.locator('iframe[src*="challenge"]').count() > 0:
-                    print(f"[Tab {tab_id}] Обнаружен challenge в iframe для {phrase}")
-                    
-                    # Используем frame_locator с множественными селекторами
-                    ch = page.frame_locator('iframe[src*="challenge"], iframe[name*="passp:challenge"]')
-                    
-                    # КРИТИЧНО из файла 45: используем get_by_label для надёжности
-                    try:
-                        # Пробуем найти поле по label
-                        answer = ch.get_by_label('Ответ на контрольный вопрос')
-                        
-                        # Ждём пока поле станет доступным
-                        await answer.wait_for(timeout=5000)
-                        
-                        # Если есть секретный ответ - вводим
-                        if self.account and hasattr(self.account, 'secret_answer'):
-                            await answer.fill(self.account.secret_answer)
-                            
-                            # Используем get_by_role для кнопки (рекомендация из файла 45)
-                            submit_btn = ch.get_by_role('button', name='Продолжить')
-                            await submit_btn.click()
-                            
-                            # Ждём возврата на Wordstat
-                            await page.wait_for_url(r'.*wordstat\.yandex\.ru.*', timeout=60000)
-                            print(f"[Tab {tab_id}] Challenge пройден успешно")
-                        else:
-                            print(f"[Tab {tab_id}] ВНИМАНИЕ: Нет секретного ответа!")
-                            continue
-                    except Exception as e:
-                        print(f"[Tab {tab_id}] Ошибка обработки challenge: {e}")
-                        continue
-                
-                # Проверяем не перекинуло ли на авторизацию
-                if await self.auth_handler.check_auth_required(page):
-                    print(f"[Tab {tab_id}] Обнаружен редирект на авторизацию, обрабатываем...")
-                    
-                    # Готовим данные аккаунта
-                    account_data = {}
-                    if self.account:
-                        account_data = {
-                            'login': self.account.login if hasattr(self.account, 'login') else self.account.name,
-                            'password': self.account.password if hasattr(self.account, 'password') else '',
-                            'secret_answer': self.account.secret_answer if hasattr(self.account, 'secret_answer') else ''
-                        }
-                    
-                    # Запускаем автоматическую авторизацию
-                    auth_success = await self.auth_handler.handle_auth_redirect(page, account_data)
-                    
-                    if not auth_success:
-                        print(f"[Tab {tab_id}] ERROR: Не удалось авторизоваться автоматически")
-                        continue
-                    else:
-                        print(f"[Tab {tab_id}] Авторизация успешна, продолжаем парсинг")
-                        await asyncio.sleep(2)
-                        # Повторяем переход на wordstat после авторизации
-                        await page.goto(url, timeout=30000)
-                        await page.wait_for_url("**/wordstat.yandex.ru/**", timeout=10000)
-                
-                # Ждем появление данных о частотности
-                freq_selectors = [
-                    '[data-auto="phrase-count-total"]',
-                    '.b-phrase-count__total',
-                    '.b-word-statistics__info-text',
-                    'td.b-word-statistics__td:has-text("Показов в месяц")'
+                    pass  # Не критично если не дождались
+            except Exception as e:
+                print(f"[Tab {tab_id}] Ошибка при открытии: {e}")
+                return tab_results
+        
+        # Убеждаемся что поле ввода доступно перед началом
+        print(f"[Tab {tab_id}] Проверяю готовность страницы...")
+        try:
+            await page.wait_for_selector('input[placeholder*="слово"], input[name="text"]', timeout=10000)
+            print(f"[Tab {tab_id}] Wordstat готов к работе!")
+        except:
+            print(f"[Tab {tab_id}] Поле ввода не найдено, страница не готова")
+            return tab_results
+        
+        # Обрабатываем каждую фразу
+        for phrase in phrases:
+            if phrase in self.results:
+                continue
+            
+            try:
+                # Ищем поле ввода с разными селекторами
+                input_field = None
+                selectors = [
+                    'input[name="text"]',
+                    'input[placeholder*="слово"]',
+                    '.b-form-input__input',
+                    'input[type="text"]'
                 ]
                 
-                frequency = None
-                for selector in freq_selectors:
+                for selector in selectors:
                     try:
-                        await page.wait_for_selector(selector, timeout=5000)
-                        freq_text = await page.locator(selector).first.inner_text()
-                        # Парсим число из текста (убираем пробелы и запятые)
-                        frequency = int(''.join(filter(str.isdigit, freq_text)))
-                        if frequency > 0:
+                        if await page.locator(selector).count() > 0:
+                            input_field = page.locator(selector).first
                             break
                     except:
                         continue
                 
-                if frequency:
-                    print(f"[Tab {tab_id}] OK {phrase} = {frequency:,}")
-                    tab_results.append({
-                        'query': phrase,
-                        'frequency': frequency,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    self.results[phrase] = frequency
-                    self.total_processed += 1
-                    self.aimd.on_success()
+                if input_field:
+                    # Очищаем и вводим фразу
+                    await input_field.clear()
+                    await input_field.fill(phrase)
+                    await input_field.press("Enter")
+                    
+                    # Ждем ответ (минимальная задержка)
+                    await asyncio.sleep(0.5)
                 else:
-                    print(f"[Tab {tab_id}] ERROR: Не удалось получить частотность для {phrase}")
-                    self.aimd.on_error()
-                
+                    print(f"[Tab {tab_id}] Не найдено поле ввода для '{phrase}'")
+                    
             except Exception as e:
-                print(f"[Tab {tab_id}] ERROR для '{phrase}': {e}")
-                reload_count += 1
+                print(f"[Tab {tab_id}] Ошибка для '{phrase}': {str(e)[:50]}")
                 self.aimd.on_error()
-                if reload_count > 3:
-                    print(f"[Tab {tab_id}] Слишком много ошибок, перезагрузка...")
-                    await page.reload()
-                    reload_count = 0
                 
-            # Минимальная пауза между запросами с учетом AIMD
-            await asyncio.sleep(self.aimd.get_delay())
+                # При ошибке пробуем перезагрузить страницу
+                try:
+                    await page.reload()
+                    await asyncio.sleep(2)
+                except:
+                    pass
         
+        # Даем время на последние ответы
+        await asyncio.sleep(2)
+        
+        print(f"[Tab {tab_id}] Завершено: обработано {len(tab_results)} фраз")
         return tab_results
     
     async def parse_batch_visual(self, queries: List[str], region: int = 225):
@@ -448,47 +519,53 @@ class TurboWordstatParser:
             return await self.parse_batch_visual(queries, region)
         
         self.start_time = time.time()
+        all_results = []  # Инициализируем результаты до try
         
-        # Инициализация
-        await self.init_browser()
-        await self.setup_tabs()
+        try:
+            # Инициализация
+            await self.init_browser()
+            await self.setup_tabs()
         
-        # Распределяем фразы по табам
-        tab_phrases = [[] for _ in range(self.num_tabs)]
-        for i, phrase in enumerate(queries):
-            tab_idx = i % self.num_tabs
-            tab_phrases[tab_idx].append(phrase)
-        
-        print(f"[TURBO] Распределено {len(queries)} фраз по {self.num_tabs} табам")
-        
-        # Запускаем воркеры параллельно
-        tasks = []
-        for i in range(self.num_tabs):
-            if tab_phrases[i]:
-                page = self.pages[i]
-                tasks.append(self.process_tab_worker(page, tab_phrases[i], i))
-        
-        # Ждем завершения всех воркеров
-        results = await asyncio.gather(*tasks)
-        
-        # Собираем все результаты
-        all_results = []
-        for tab_results in results:
-            if tab_results:
-                all_results.extend(tab_results)
-        
-        # Статистика
-        elapsed = time.time() - self.start_time
-        speed = len(all_results) / elapsed * 60 if elapsed > 0 else 0
-        
-        print(f"\n{'='*70}")
-        print(f"   РЕЗУЛЬТАТЫ ТУРБО ПАРСИНГА")
-        print(f"{'='*70}")
-        print(f"  Время: {elapsed:.1f} сек")
-        print(f"  Обработано: {len(all_results)}/{len(queries)}")
-        print(f"  Успех: {len(all_results)/len(queries)*100:.1f}%")
-        print(f"  СКОРОСТЬ: {speed:.1f} фраз/мин")
-        print(f"{'='*70}")
+            # Распределяем фразы по табам
+            tab_phrases = [[] for _ in range(self.num_tabs)]
+            for i, phrase in enumerate(queries):
+                tab_idx = i % self.num_tabs
+                tab_phrases[tab_idx].append(phrase)
+            
+            print(f"[TURBO] Распределено {len(queries)} фраз по {self.num_tabs} табам")
+            
+            # Запускаем воркеры параллельно
+            tasks = []
+            for i in range(self.num_tabs):
+                if tab_phrases[i]:
+                    page = self.pages[i]
+                    tasks.append(self.process_tab_worker(page, tab_phrases[i], i))
+            
+            # Ждем завершения всех воркеров
+            results = await asyncio.gather(*tasks, return_exceptions=True)  # return_exceptions чтобы не падать на ошибках
+            
+            # Собираем все результаты
+            for tab_results in results:
+                if tab_results and not isinstance(tab_results, Exception):
+                    all_results.extend(tab_results)
+            
+            # Статистика
+            elapsed = time.time() - self.start_time
+            speed = len(all_results) / elapsed * 60 if elapsed > 0 else 0
+            
+            print(f"\n{'='*70}")
+            print(f"   РЕЗУЛЬТАТЫ ТУРБО ПАРСИНГА")
+            print(f"{'='*70}")
+            print(f"  Время: {elapsed:.1f} сек")
+            print(f"  Обработано: {len(all_results)}/{len(queries)}")
+            print(f"  Успех: {len(all_results)/len(queries)*100:.1f}%" if queries else "0%")
+            print(f"  СКОРОСТЬ: {speed:.1f} фраз/мин")
+            print(f"{'='*70}")
+            
+        except Exception as e:
+            print(f"[TURBO] КРИТИЧЕСКАЯ ОШИБКА в parse_batch: {e}")
+            import traceback
+            traceback.print_exc()
         
         return all_results
     
@@ -516,9 +593,18 @@ class TurboWordstatParser:
         print(f"[TURBO] Сохранено {len(results)} результатов в БД")
     
     async def close(self):
-        """Закрытие браузера"""
-        if self.browser:
-            await self.browser.close()
+        """Отключение от CDP браузера (НЕ закрываем Chrome - он остается работать)"""
+        try:
+            # При CDP подключении мы НЕ закрываем Chrome!
+            # Просто отключаемся
+            print("[TURBO] Отключаюсь от Chrome CDP...")
+            
+            if hasattr(self, 'playwright'):
+                await self.playwright.stop()
+            
+            print("[TURBO] Отключение завершено. Chrome остается работать для следующих запусков.")
+        except Exception as e:
+            print(f"[TURBO] Ошибка при отключении: {e}")
 
 
 # Дополнительные модули из рекомендаций GPT
