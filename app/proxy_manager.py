@@ -222,7 +222,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         layout.addLayout(settings_layout)
         
-        # Таблица
+        # Таблица (стандартный стиль как везде в приложении)
         self.table = QtWidgets.QTableWidget(0, len(self.COLUMNS))
         self.table.setHorizontalHeaderLabels(self.COLUMNS)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -279,7 +279,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             status_item = QtWidgets.QTableWidgetItem(status)
             status_item.setTextAlignment(QtCore.Qt.AlignCenter)
             
-            # Цветовое выделение
+            # Цветовое выделение (стандартные цвета)
             if status == "OK":
                 status_item.setBackground(QtGui.QColor("#d4edda"))
             elif status in ("FAIL", "TIMEOUT", "ERR"):
