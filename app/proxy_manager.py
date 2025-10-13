@@ -296,25 +296,21 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             status_item = QtWidgets.QTableWidgetItem(status)
             status_item.setTextAlignment(QtCore.Qt.AlignCenter)
             
-            # Цветовое выделение (стандартные цвета)
+            # Цвет ТОЛЬКО текста (как в остальном софте - темная тема)
             if status == "OK":
-                status_item.setBackground(QtGui.QColor("#d4edda"))
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#4CAF50")))  # Зеленый текст
             elif status in ("FAIL", "TIMEOUT", "ERR"):
-                status_item.setBackground(QtGui.QColor("#f8d7da"))
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#F44336")))  # Красный текст
             
             self.table.setItem(row, 4, status_item)
             self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(px['latency_ms'] or "")))
             
-            # Колонка "Используется" - показываем аккаунты
+            # Колонка "Используется" - показываем аккаунты (БЕЗ цветного фона - в стиле софта)
             accounts_using = self._accounts_map.get(px['raw'], [])
             accounts_str = ", ".join(accounts_using) if accounts_using else ""
             used_item = QtWidgets.QTableWidgetItem(accounts_str)
             
             if accounts_using:
-                # WCAG контраст 4.5:1 - темный текст на светло-желтом фоне
-                used_item.setForeground(QtGui.QBrush(QtGui.QColor("#111")))  # Темный текст
-                used_item.setBackground(QtGui.QBrush(QtGui.QColor("#FFE8A3")))  # Мягкий желтый
-                
                 # Tooltip с полным списком аккаунтов (на случай длинной строки)
                 full_accounts = "\n".join(accounts_using)
                 used_item.setToolTip(f"Используется в аккаунтах:\n{full_accounts}")
