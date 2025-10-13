@@ -142,19 +142,21 @@ class ProxyCheckThread(QThread):
 class ProxyManagerDialog(QtWidgets.QDialog):
     """Окно управления прокси (как в Key Collector)"""
     
-    COLUMNS = ["ID", "Proxy", "Тип", "Логин", "Статус", "Пинг (мс)", "Ошибка", "Проверено"]
+    COLUMNS = ["ID", "Proxy", "Тип", "Логин", "Статус", "Пинг (мс)", "Используется", "Ошибка", "Проверено"]
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🔌 Прокси-менеджер")
         self.setModal(False)  # ВАЖНО: немодальное окно
-        self.resize(1100, 650)
+        self.resize(1200, 650)
         
         self._proxies: List[Dict] = []
         self._check_thread = None
+        self._accounts_map = {}  # {proxy_raw: [account_names]}
         
         self._create_ui()
         self._load_from_store()
+        self._load_accounts_map()  # Загружаем привязку к аккаунтам
     
     def _create_ui(self):
         """Создает интерфейс"""
@@ -220,7 +222,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         header = self.table.horizontalHeader()
         header.setStretchLastSection(True)
-        for i in [1, 6]:  # Proxy и Ошибка
+        for i in [1, 6, 7]:  # Proxy, Используется, Ошибка
             header.setSectionResizeMode(i, QtWidgets.QHeaderView.Stretch)
         
         layout.addWidget(self.table)
@@ -239,6 +241,20 @@ class ProxyManagerDialog(QtWidgets.QDialog):
     def _load_from_store(self):
         """Загружает прокси из ProxyStore"""
         self._proxies = proxy_store.get_all_proxies()
+        self._refresh_table()
+    
+    def _load_accounts_map(self):
+        """Загружает привязку прокси к аккаунтам"""
+        self._accounts_map = {}
+        accounts = account_service.list_accounts()
+        
+        for acc in accounts:
+            if acc.proxy and acc.name not in ["demo_account", "wordstat_main"]:
+                if acc.proxy not in self._accounts_map:
+                    self._accounts_map[acc.proxy] = []
+                self._accounts_map[acc.proxy].append(acc.name)
+        
+        # Обновляем таблицу после загрузки
         self._refresh_table()
     
     def _refresh_table(self):
@@ -263,13 +279,22 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             
             self.table.setItem(row, 4, status_item)
             self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(px['latency_ms'] or "")))
-            self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(px['last_error'] or ""))
+            
+            # Колонка "Используется" - показываем аккаунты
+            accounts_using = self._accounts_map.get(px['raw'], [])
+            accounts_str = ", ".join(accounts_using) if accounts_using else ""
+            used_item = QtWidgets.QTableWidgetItem(accounts_str)
+            if accounts_using:
+                used_item.setBackground(QtGui.QColor("#fff3cd"))  # Желтый фон если используется
+            self.table.setItem(row, 6, used_item)
+            
+            self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(px['last_error'] or ""))
             
             checked_at = ""
             if px['last_check']:
                 checked_at = px['last_check'].strftime("%Y-%m-%d %H:%M:%S") if isinstance(px['last_check'], datetime) else str(px['last_check'])
             
-            self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(checked_at))
+            self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(checked_at))
         
         self._update_stats()
     
@@ -329,6 +354,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         """Синхронизировать прокси из аккаунтов"""
         added = proxy_store.sync_from_accounts()
         self._load_from_store()
+        self._load_accounts_map()  # Обновляем привязку
         
         QtWidgets.QMessageBox.information(
             self,
@@ -372,8 +398,9 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 
                 self.table.setItem(row, 4, status_item)
                 self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(latency) if latency else ""))
-                self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(error))
-                self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                # row 6 - "Используется" - не трогаем
+                self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(error))
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 break
         
         self._update_stats()
@@ -445,6 +472,9 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 proxy = selected_proxies[i % len(selected_proxies)]
                 account_service.update_account_proxy(acc_name, proxy['raw'])
                 updated += 1
+            
+            # Обновляем привязку и таблицу
+            self._load_accounts_map()
             
             QtWidgets.QMessageBox.information(
                 self,
