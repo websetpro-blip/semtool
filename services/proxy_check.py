@@ -14,7 +14,9 @@ async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, A
     Проверка прокси через https://yandex.ru/internet
     
     Args:
-        proxy_url: URL прокси в формате http://user:pass@host:port или None
+        proxy_url: URL прокси в формате:
+            - ip:port@user:pass (SemTool формат)
+            - http://user:pass@ip:port (стандартный URL)
         timeout: Таймаут в секундах
     
     Returns:
@@ -36,12 +38,47 @@ async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, A
     start_time = time.time()
     
     try:
+        # Парсим прокси в правильный формат для aiohttp
+        proxy_auth = None
+        
+        # Формат: ip:port@user:pass (из SemTool)
+        if '@' in proxy_url and not proxy_url.startswith('http'):
+            parts = proxy_url.split('@')
+            if len(parts) == 2:
+                host_port = parts[0]
+                user_pass = parts[1]
+                user, password = user_pass.split(':', 1)
+                proxy_url_clean = f"http://{host_port}"
+                proxy_auth = aiohttp.BasicAuth(user, password)
+            else:
+                proxy_url_clean = f"http://{proxy_url}"
+        # Формат: http://user:pass@ip:port
+        elif '@' in proxy_url and '://' in proxy_url:
+            import re
+            match = re.match(r'(https?://)([^:]+):([^@]+)@(.+)', proxy_url)
+            if match:
+                protocol, user, password, host_port = match.groups()
+                proxy_url_clean = f"{protocol}{host_port}"
+                proxy_auth = aiohttp.BasicAuth(user, password)
+            else:
+                proxy_url_clean = proxy_url
+        else:
+            # Без авторизации
+            if not proxy_url.startswith('http'):
+                proxy_url_clean = f"http://{proxy_url}"
+            else:
+                proxy_url_clean = proxy_url
+        
         timeout_obj = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(
             timeout=timeout_obj,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         ) as session:
-            async with session.get("https://yandex.ru/internet", proxy=proxy_url) as response:
+            async with session.get(
+                "https://yandex.ru/internet", 
+                proxy=proxy_url_clean,
+                proxy_auth=proxy_auth
+            ) as response:
                 response.raise_for_status()
                 
                 latency_ms = int((time.time() - start_time) * 1000)
