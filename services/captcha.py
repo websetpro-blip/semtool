@@ -1,216 +1,208 @@
 """
-Сервис для работы с капчей (RuCaptcha/CapMonster)
-Проверка баланса и решение капчи
+Сервис работы с капчами
+Поддержка: RuCaptcha, CapMonster, 2Captcha
 """
 
-import aiohttp
+from __future__ import annotations
 import asyncio
-import time
+import aiohttp
 from typing import Optional, Dict, Any
+from pathlib import Path
 
 
-class RuCaptchaClient:
-    """Клиент для работы с RuCaptcha API"""
+class CaptchaService:
+    """Универсальный клиент для решения капч"""
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, service: str = "rucaptcha"):
+        """
+        Args:
+            api_key: API ключ сервиса
+            service: rucaptcha | capmonster | 2captcha
+        """
         self.api_key = api_key
-        self.base_url = "https://rucaptcha.com"
-    
-    async def get_balance(self) -> Dict[str, Any]:
-        """
-        Получить баланс аккаунта
+        self.service = service.lower()
         
-        Returns:
-            {
-                "ok": bool,
-                "balance": float,  # Баланс в рублях
-                "error": str  # Текст ошибки если ok=False
+        # URL endpoints
+        self.endpoints = {
+            "rucaptcha": {
+                "in": "https://rucaptcha.com/in.php",
+                "res": "https://rucaptcha.com/res.php"
+            },
+            "capmonster": {
+                "in": "https://api.capmonster.cloud/createTask",
+                "res": "https://api.capmonster.cloud/getTaskResult"
+            },
+            "2captcha": {
+                "in": "https://2captcha.com/in.php",
+                "res": "https://2captcha.com/res.php"
             }
-        """
+        }
+        
+        if self.service not in self.endpoints:
+            raise ValueError(f"Неподдерживаемый сервис: {service}")
+    
+    async def get_balance(self) -> float:
+        """Получить баланс на счету"""
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                url = f"{self.base_url}/res.php"
-                params = {
-                    "key": self.api_key,
-                    "action": "getbalance"
-                }
-                
-                async with session.get(url, params=params) as response:
-                    text = await response.text()
-                    text = text.strip()
-                    
-                    # Проверка на ошибки
-                    if text.startswith("ERROR"):
-                        error_msg = text.replace("ERROR_", "").replace("_", " ")
-                        return {
-                            "ok": False,
-                            "balance": 0.0,
-                            "error": error_msg
-                        }
-                    
-                    # Пробуем распарсить как float
-                    try:
-                        balance = float(text)
-                        return {
-                            "ok": True,
-                            "balance": balance,
-                            "error": None
-                        }
-                    except ValueError:
-                        return {
-                            "ok": False,
-                            "balance": 0.0,
-                            "error": f"Неожиданный ответ: {text}"
-                        }
-        
-        except asyncio.TimeoutError:
-            return {
-                "ok": False,
-                "balance": 0.0,
-                "error": "Timeout 10s"
-            }
-        
+            if self.service == "capmonster":
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        "https://api.capmonster.cloud/getBalance",
+                        json={"clientKey": self.api_key},
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        data = await resp.json()
+                        return float(data.get("balance", 0))
+            else:
+                # RuCaptcha / 2Captcha
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        self.endpoints[self.service]["res"],
+                        params={"key": self.api_key, "action": "getbalance"},
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        text = await resp.text()
+                        return float(text.strip())
         except Exception as e:
-            return {
-                "ok": False,
-                "balance": 0.0,
-                "error": str(e)
-            }
+            print(f"[Captcha] Ошибка получения баланса: {e}")
+            return 0.0
     
-    async def solve_image(self, image_base64: str, **kwargs) -> Dict[str, Any]:
+    async def solve_image(self, image_base64: str, **kwargs) -> Optional[str]:
         """
-        Решить капчу с изображения
+        Решить капчу с картинки
         
         Args:
             image_base64: Изображение в base64
-            **kwargs: Дополнительные параметры (phrase, regsense, numeric и т.д.)
+            **kwargs: Дополнительные параметры (numeric, min_len, max_len, etc)
         
         Returns:
-            {
-                "ok": bool,
-                "code": str,  # Текст капчи
-                "captcha_id": str,  # ID капчи
-                "error": str  # Текст ошибки если ok=False
-            }
+            Текст капчи или None при ошибке
         """
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
-                # Отправка капчи
-                url = f"{self.base_url}/in.php"
-                data = {
-                    "key": self.api_key,
-                    "method": "base64",
-                    "body": image_base64,
-                    "json": 1
-                }
-                data.update(kwargs)
+            if self.service == "capmonster":
+                return await self._solve_capmonster(image_base64, **kwargs)
+            else:
+                return await self._solve_rucaptcha(image_base64, **kwargs)
+        except Exception as e:
+            print(f"[Captcha] Ошибка решения: {e}")
+            return None
+    
+    async def _solve_rucaptcha(self, image_base64: str, **kwargs) -> Optional[str]:
+        """RuCaptcha / 2Captcha решение"""
+        async with aiohttp.ClientSession() as session:
+            # Отправляем капчу
+            data = {
+                "key": self.api_key,
+                "method": "base64",
+                "body": image_base64,
+                "json": 1
+            }
+            data.update(kwargs)
+            
+            async with session.post(
+                self.endpoints[self.service]["in"],
+                data=data,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                result = await resp.json()
+                if result.get("status") != 1:
+                    print(f"[Captcha] Ошибка отправки: {result.get('request')}")
+                    return None
                 
-                async with session.post(url, data=data) as response:
-                    result = await response.json()
-                    
-                    if result.get("status") != 1:
-                        return {
-                            "ok": False,
-                            "code": None,
-                            "captcha_id": None,
-                            "error": result.get("request", "Unknown error")
-                        }
-                    
-                    captcha_id = result.get("request")
+                captcha_id = result["request"]
+            
+            # Ждем решения (до 60 секунд)
+            for attempt in range(24):
+                await asyncio.sleep(2.5)
                 
-                # Ждем решение (макс 60 сек)
-                for attempt in range(24):
-                    await asyncio.sleep(2.5)
-                    
-                    url = f"{self.base_url}/res.php"
-                    params = {
+                async with session.get(
+                    self.endpoints[self.service]["res"],
+                    params={
                         "key": self.api_key,
                         "action": "get",
                         "id": captcha_id,
                         "json": 1
-                    }
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    result = await resp.json()
                     
-                    async with session.get(url, params=params) as response:
-                        result = await response.json()
-                        
-                        if result.get("status") == 1:
-                            return {
-                                "ok": True,
-                                "code": result.get("request"),
-                                "captcha_id": captcha_id,
-                                "error": None
-                            }
-                        
-                        # Если еще не готово - продолжаем ждать
-                        if result.get("request") == "CAPCHA_NOT_READY":
-                            continue
-                        
-                        # Если другая ошибка
-                        return {
-                            "ok": False,
-                            "code": None,
-                            "captcha_id": captcha_id,
-                            "error": result.get("request", "Unknown error")
-                        }
-                
-                # Timeout
-                return {
-                    "ok": False,
-                    "code": None,
-                    "captcha_id": captcha_id,
-                    "error": "Timeout 60s"
+                    if result.get("status") == 1:
+                        return result["request"]
+                    
+                    if result.get("request") not in ["CAPCHA_NOT_READY", "ERROR_CAPTCHA_UNSOLVABLE"]:
+                        print(f"[Captcha] Ошибка решения: {result.get('request')}")
+                        return None
+            
+            print("[Captcha] Превышен таймаут ожидания")
+            return None
+    
+    async def _solve_capmonster(self, image_base64: str, **kwargs) -> Optional[str]:
+        """CapMonster решение"""
+        async with aiohttp.ClientSession() as session:
+            # Создаем задачу
+            task_data = {
+                "clientKey": self.api_key,
+                "task": {
+                    "type": "ImageToTextTask",
+                    "body": image_base64
                 }
-        
-        except Exception as e:
-            return {
-                "ok": False,
-                "code": None,
-                "captcha_id": None,
-                "error": str(e)
             }
-    
-    async def report_bad(self, captcha_id: str) -> bool:
-        """
-        Пожаловаться на неправильное решение капчи
-        
-        Args:
-            captcha_id: ID капчи
-        
-        Returns:
-            True если жалоба принята
-        """
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                url = f"{self.base_url}/res.php"
-                params = {
-                    "key": self.api_key,
-                    "action": "reportbad",
-                    "id": captcha_id
-                }
+            
+            # Добавляем параметры если есть
+            if kwargs.get("numeric"):
+                task_data["task"]["numeric"] = kwargs["numeric"]
+            if kwargs.get("minLength"):
+                task_data["task"]["minLength"] = kwargs["minLength"]
+            if kwargs.get("maxLength"):
+                task_data["task"]["maxLength"] = kwargs["maxLength"]
+            
+            async with session.post(
+                self.endpoints[self.service]["in"],
+                json=task_data,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                result = await resp.json()
+                if result.get("errorId"):
+                    print(f"[Captcha] Ошибка создания задачи: {result.get('errorDescription')}")
+                    return None
                 
-                async with session.get(url, params=params) as response:
-                    text = await response.text()
-                    return text.strip() == "OK_REPORT_RECORDED"
-        
-        except:
-            return False
+                task_id = result["taskId"]
+            
+            # Ждем решения
+            for attempt in range(24):
+                await asyncio.sleep(2.5)
+                
+                async with session.post(
+                    self.endpoints[self.service]["res"],
+                    json={
+                        "clientKey": self.api_key,
+                        "taskId": task_id
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    result = await resp.json()
+                    
+                    if result.get("status") == "ready":
+                        return result["solution"]["text"]
+                    
+                    if result.get("errorId"):
+                        print(f"[Captcha] Ошибка получения результата: {result.get('errorDescription')}")
+                        return None
+            
+            print("[Captcha] Превышен таймаут ожидания")
+            return None
 
 
-# Тестирование (если запустить напрямую)
-if __name__ == "__main__":
-    # Тестовый ключ из файла
-    TEST_KEY = "8f00b4cb9b77d982abb77260a168f976"
-    
-    async def test():
-        print("Проверка RuCaptcha...")
-        client = RuCaptchaClient(TEST_KEY)
-        
-        # Проверка баланса
-        result = await client.get_balance()
-        
-        if result["ok"]:
-            print(f"[OK] Баланс: {result['balance']:.2f} руб")
-        else:
-            print(f"[FAIL] Ошибка: {result['error']}")
-    
-    asyncio.run(test())
+# Удобные функции для быстрого использования
+
+async def check_balance(api_key: str, service: str = "rucaptcha") -> float:
+    """Проверить баланс"""
+    captcha = CaptchaService(api_key, service)
+    return await captcha.get_balance()
+
+
+async def solve_captcha(api_key: str, image_base64: str, service: str = "rucaptcha", **kwargs) -> Optional[str]:
+    """Решить капчу"""
+    captcha = CaptchaService(api_key, service)
+    return await captcha.solve_image(image_base64, **kwargs)
