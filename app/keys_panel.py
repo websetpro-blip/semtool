@@ -78,6 +78,22 @@ class KeysPanel(QWidget):
             "Фраза", "WS", '"WS"', "!WS", "Статус", "Группа"
         ])
         
+        # Убираем белый фон ячеек - делаем прозрачным (как в основном софте)
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: transparent;
+                gridline-color: #3a3a3a;
+            }
+            QTableWidget::item {
+                background-color: transparent;
+                border: none;
+                padding: 5px;
+            }
+            QTableWidget::item:selected {
+                background-color: #0d47a1;
+            }
+        """)
+        
         # Настройка колонок
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)  # Фраза растягивается

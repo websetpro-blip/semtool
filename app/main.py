@@ -1480,6 +1480,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SemTool — парсер Wordstat")
         self.resize(1100, 700)
+        # Убираем стороннюю иконку - ставим стандартную или вообще без иконки
+        self.setWindowIcon(QApplication.style().standardIcon(QApplication.style().SP_ComputerIcon))
 
         ensure_schema()
         Base.metadata.create_all(engine)
