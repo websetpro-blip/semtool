@@ -5,10 +5,16 @@ SemTool - запуск без окна терминала
 import sys
 import os
 
-# Добавляем родительскую папку в путь
-parent_dir = os.path.dirname(os.path.abspath(__file__))
+# Получаем путь к директории со скриптом
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Добавляем C:\AI\yandex в путь (родительская папка semtool)
+parent_dir = os.path.dirname(script_dir)
 if parent_dir not in sys.path:
-    sys.path.insert(0, os.path.dirname(parent_dir))
+    sys.path.insert(0, parent_dir)
+
+# Устанавливаем рабочую директорию
+os.chdir(parent_dir)
 
 # Запускаем главное окно
 from semtool.app.main import main

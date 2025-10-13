@@ -4,7 +4,14 @@ $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $DesktopPath "SemTool.lnk"
 
 # Путь к pythonw.exe (запуск без окна терминала)
-$PythonPath = (Get-Command python).Path -replace "python.exe", "pythonw.exe"
+# Используем venv из C:\AI\.venv
+$PythonPath = "C:\AI\.venv\Scripts\pythonw.exe"
+
+# Проверяем что pythonw.exe существует
+if (-not (Test-Path $PythonPath)) {
+    Write-Host "❌ Ошибка: pythonw.exe не найден по пути: $PythonPath" -ForegroundColor Red
+    exit 1
+}
 
 # Путь к .pyw файлу
 $TargetPath = "C:\AI\yandex\semtool\run_semtool.pyw"
