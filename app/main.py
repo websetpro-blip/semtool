@@ -1480,9 +1480,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SemTool — парсер Wordstat")
         self.resize(1100, 700)
-        # Убираем стороннюю иконку - оставляем стандартную иконку Windows
-        from PySide6.QtWidgets import QStyle
-        self.setWindowIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        # Убираем любую иконку - используется дефолтная от Python/Qt
 
         ensure_schema()
         Base.metadata.create_all(engine)
