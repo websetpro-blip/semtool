@@ -1480,7 +1480,19 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SemTool — парсер Wordstat")
         self.resize(1100, 700)
-        # Убираем любую иконку - используется дефолтная от Python/Qt
+        
+        # Создаем свою иконку для SemTool (буквы ST на темном фоне)
+        from PySide6.QtGui import QPixmap, QIcon, QPainter, QFont, QColor
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(QColor("#1e1e1e"))  # Темный фон
+        
+        painter = QPainter(pixmap)
+        painter.setPen(QColor("#4CAF50"))  # Зеленый текст
+        painter.setFont(QFont("Arial", 28, QFont.Bold))
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, "ST")
+        painter.end()
+        
+        self.setWindowIcon(QIcon(pixmap))
 
         ensure_schema()
         Base.metadata.create_all(engine)
