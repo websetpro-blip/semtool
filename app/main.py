@@ -1562,7 +1562,7 @@ class MainWindow(QMainWindow):
         
         # Заголовок секции
         section_title = QLabel("Status and Activity")
-        section_title.setStyleSheet("font-size: 12px; color: #8B8E93; font-weight: 600;")  /* --text-muted Beige-Gold */
+        section_title.setStyleSheet("font-size: 12px; color: #8B8E93; font-weight: 600;")  # --text-muted Beige-Gold
         log_layout.addWidget(section_title)
         
         # Status блок
