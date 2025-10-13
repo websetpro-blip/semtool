@@ -238,6 +238,9 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
         self.table.setAlternatingRowColors(True)
         
+        # ВАЖНО: Запрет редактирования (как в Кей-Коллекторе)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        
         # Настройка отображения текста
         self.table.setTextElideMode(QtCore.Qt.ElideRight)  # Обрезка "..." справа
         self.table.setWordWrap(False)  # Без переносов - стабильная высота строк
@@ -319,15 +322,25 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             self.table.setItem(row, 4, status_item)
             self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(px['latency_ms'] or "")))
             
-            # Колонка "Используется" - показываем аккаунты (БЕЗ цветного фона - в стиле софта)
+            # Колонка "Используется" - СЧЁТЧИК вместо списка (как в Кей-Коллекторе)
             accounts_using = self._accounts_map.get(px['raw'], [])
-            accounts_str = ", ".join(accounts_using) if accounts_using else ""
-            used_item = QtWidgets.QTableWidgetItem(accounts_str)
             
+            # Показываем только СЧЁТЧИК "Использовано: N"
             if accounts_using:
-                # Tooltip с полным списком аккаунтов (на случай длинной строки)
+                count_text = f"Использовано: {len(accounts_using)}"
+            else:
+                count_text = ""
+            
+            used_item = QtWidgets.QTableWidgetItem(count_text)
+            used_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            
+            # Tooltip с ПОЛНЫМ списком аккаунтов
+            if accounts_using:
                 full_accounts = "\n".join(accounts_using)
                 used_item.setToolTip(f"Используется в аккаунтах:\n{full_accounts}")
+            
+            # Запрет редактирования
+            used_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
             
             self.table.setItem(row, 6, used_item)
             
