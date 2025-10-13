@@ -1500,15 +1500,39 @@ class MainWindow(QMainWindow):
         self.accounts_tab = AccountsTabExtended()
         self.tasks_tab = TasksTab()
         
-        # Создаем большой журнал внизу (из файла 42)
-        from PySide6.QtWidgets import QPlainTextEdit, QToolBar
+        # Создаем большой журнал внизу (из файла 42 + 43)
+        from PySide6.QtWidgets import QPlainTextEdit, QToolBar, QTextEdit
         from PySide6.QtGui import QFont, QAction
         
-        self.log_widget = QPlainTextEdit()  # Производительный для больших логов
+        # БЛОК STATUS AND ACTIVITY (как на скриншоте - файл 43)
+        self.status_label = QLabel("Готов к работе")
+        self.status_label.setStyleSheet("""
+            font-size: 14px;
+            font-weight: 600;
+            color: #0F172A;
+            padding: 4px 0;
+        """)
+        
+        self.status_block = QLabel("[--:--:--] Ожидание...")
+        self.status_block.setStyleSheet("""
+            QLabel {
+                background: #FFE7D6;
+                color: #D95500;
+                border: 2px solid #FF7A00;
+                border-radius: 10px;
+                padding: 12px 16px;
+                font-family: "JetBrains Mono", "Consolas", monospace;
+                font-size: 13px;
+                font-weight: 500;
+            }
+        """)
+        
+        # Используем QTextEdit для подсветки логов (файл 43: INFO/ERROR/WARN цветом)
+        self.log_widget = QTextEdit()  # QTextEdit поддерживает HTML для подсветки
         self.log_widget.setReadOnly(True)
-        self.log_widget.setFont(QFont("Consolas", 9))  # Моноширинный шрифт
-        self.log_widget.setLineWrapMode(QPlainTextEdit.NoWrap)  # Без переносов
-        self.log_widget.setMaximumBlockCount(10000)  # Лимит строк
+        self.log_widget.setFont(QFont("JetBrains Mono", 9))  # Шрифт из файла 43
+        self.log_widget.setLineWrapMode(QTextEdit.NoWrap)  # Без переносов
+        self.log_widget.document().setMaximumBlockCount(10000)  # Лимит строк
         
         # Панель кнопок для журнала
         log_toolbar = QToolBar()
@@ -1530,10 +1554,22 @@ class MainWindow(QMainWindow):
         self.pause_log_action.setCheckable(True)
         log_toolbar.addAction(self.pause_log_action)
         
-        # Виджет журнала с кнопками
+        # Виджет журнала с кнопками + Status блок (файл 43)
         log_container = QWidget()
         log_layout = QVBoxLayout(log_container)
-        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_layout.setContentsMargins(8, 8, 8, 8)
+        log_layout.setSpacing(8)
+        
+        # Заголовок секции
+        section_title = QLabel("Status and Activity")
+        section_title.setStyleSheet("font-size: 12px; color: #64748B; font-weight: 600;")
+        log_layout.addWidget(section_title)
+        
+        # Status блок
+        log_layout.addWidget(self.status_label)
+        log_layout.addWidget(self.status_block)
+        
+        # Журнал задач
         log_layout.addWidget(QLabel("📋 Журнал задач"))
         log_layout.addWidget(log_toolbar)
         log_layout.addWidget(self.log_widget)
@@ -1596,6 +1632,9 @@ class MainWindow(QMainWindow):
         
         # Proxy Manager (немодальное окно)
         self.proxy_manager = None
+        
+        # Инициализация статуса при загрузке (файл 43)
+        self._initialize_status()
     
     def _create_menu(self):
         """Создает главное меню"""
@@ -1637,6 +1676,42 @@ class MainWindow(QMainWindow):
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.log_widget.toPlainText())
+    
+    def update_status(self, message: str):
+        """Обновить статус в оранжевом блоке (файл 43)"""
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.status_block.setText(f"[{timestamp}] {message}")
+    
+    def log_message(self, message: str, level: str = "INFO"):
+        """
+        Добавить сообщение в журнал с подсветкой уровня (файл 43)
+        
+        level: INFO (зеленый), ERROR (красный), WARN (оранжевый), DEBUG (серый)
+        """
+        from datetime import datetime
+        
+        # Цвета по уровням (файл 43: дизайн-система Orange Light)
+        colors = {
+            "INFO": "#16A34A",    # зеленый
+            "ERROR": "#DC2626",   # красный
+            "WARN": "#F59E0B",    # оранжевый
+            "DEBUG": "#64748B",   # серый
+        }
+        
+        color = colors.get(level.upper(), "#0F172A")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        # HTML форматирование для подсветки
+        html_message = f'<span style="color: {color}; font-weight: 600;">[{level.upper()}]</span> <span style="color: #475569;">[{timestamp}]</span> {message}'
+        
+        # Добавляем в лог
+        self.log_widget.append(html_message)
+        
+        # Автоскролл если не на паузе
+        if not self.pause_log_action.isChecked():
+            scrollbar = self.log_widget.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
     
     def _open_proxy_manager(self):
         """Открыть окно Proxy Manager"""
@@ -1680,6 +1755,23 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"[Theme] ERROR при загрузке QSS: {e}")
             print(f"[Theme] Используется Fusion без кастомных стилей")
+    
+    def _initialize_status(self):
+        """Инициализация статуса при загрузке приложения (файл 43)"""
+        try:
+            from ..services import accounts as account_service
+            accounts = account_service.list_accounts()
+            
+            # Обновляем статус в оранжевом блоке
+            count = len(accounts)
+            self.update_status(f"Загружено: {count} аккаунтов")
+            
+            # Логируем успешный запуск
+            self.log_message(f"SemTool запущен, загружено {count} аккаунтов", "INFO")
+            self.log_message("Orange Light дизайн-система активна", "INFO")
+        except Exception as e:
+            self.update_status(f"Ошибка загрузки: {str(e)}")
+            self.log_message(f"Ошибка инициализации: {str(e)}", "ERROR")
     
     def _update_keys_panel(self):
         """Обновить панель ключей из результатов"""
