@@ -371,11 +371,11 @@ class AccountsTabExtended(QWidget):
         self.refresh_btn.clicked.connect(self.refresh)
         buttons_layout.addWidget(self.refresh_btn)
         
-        # Кнопка тест прокси
-        self.test_proxy_btn = QPushButton("🔌 Тест прокси")
-        self.test_proxy_btn.clicked.connect(self.test_proxy_selected)
-        self.test_proxy_btn.setEnabled(False)
-        self.test_proxy_btn.setToolTip("Проверить прокси выбранного аккаунта")
+        # Кнопка Proxy Manager
+        self.test_proxy_btn = QPushButton("🔌 Прокси-менеджер")
+        self.test_proxy_btn.clicked.connect(self.open_proxy_manager)
+        self.test_proxy_btn.setEnabled(True)  # Всегда доступна
+        self.test_proxy_btn.setToolTip("Открыть Proxy Manager для массовой проверки")
         self.test_proxy_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9C27B0;
@@ -559,8 +559,8 @@ class AccountsTabExtended(QWidget):
         self.login_btn.setEnabled(len(selected_rows) > 0)
         # Автологин работает только для одного выбранного аккаунта
         self.auto_login_btn.setEnabled(len(selected_rows) == 1)
-        # Тест прокси работает только для одного выбранного аккаунта
-        self.test_proxy_btn.setEnabled(len(selected_rows) == 1)
+        # Proxy Manager всегда доступен
+        # self.test_proxy_btn.setEnabled(True)  # Убрали, т.к. всегда True
     
     def refresh(self):
         """Обновить таблицу аккаунтов"""
@@ -906,6 +906,16 @@ class AccountsTabExtended(QWidget):
             msg += f"Задержка: {result['latency_ms']} мс"
             QMessageBox.warning(self, "Результат проверки", msg)
             self.log_action(f"Прокси {account.proxy} НЕ работает: {result['error']}")
+    
+    def open_proxy_manager(self):
+        """Открыть Proxy Manager (немодальное окно)"""
+        from .proxy_manager import ProxyManagerDialog
+        
+        # Создаем и показываем окно
+        proxy_manager = ProxyManagerDialog(self)
+        proxy_manager.show()  # НЕ exec() - немодальное!
+        
+        self.log_action("Открыт Proxy Manager")
     
     def check_captcha_balance(self):
         """Проверить баланс RuCaptcha"""
