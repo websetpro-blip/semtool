@@ -1527,8 +1527,42 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter)
         
+        # Создаем меню
+        self._create_menu()
+        
         # Подключаем обновление панели ключей при изменении результатов
         self.results_tab.results_updated.connect(self._update_keys_panel)
+        
+        # Proxy Manager (немодальное окно)
+        self.proxy_manager = None
+    
+    def _create_menu(self):
+        """Создает главное меню"""
+        menubar = self.menuBar()
+        
+        # Меню "Инструменты"
+        tools_menu = menubar.addMenu("&Инструменты")
+        
+        # Прокси-менеджер
+        proxy_action = tools_menu.addAction("🔌 Прокси-менеджер")
+        proxy_action.setShortcut("Ctrl+P")
+        proxy_action.triggered.connect(self._open_proxy_manager)
+        
+        # Можно добавить другие инструменты
+        tools_menu.addSeparator()
+        tools_menu.addAction("⚙️ Настройки").setEnabled(False)  # Пока не реализовано
+    
+    def _open_proxy_manager(self):
+        """Открыть окно Proxy Manager"""
+        from .proxy_manager import ProxyManagerDialog
+        
+        if self.proxy_manager is None or not self.proxy_manager.isVisible():
+            self.proxy_manager = ProxyManagerDialog(self)
+            self.proxy_manager.show()
+        else:
+            # Если окно уже открыто - активируем его
+            self.proxy_manager.raise_()
+            self.proxy_manager.activateWindow()
     
     def _update_keys_panel(self):
         """Обновить панель ключей из результатов"""

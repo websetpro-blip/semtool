@@ -3,3 +3,4 @@ playwright==1.48.0
 nltk==3.9.1
 sqlalchemy==2.0.36
 aiohttp==3.11.10
+aiohttp-socks==0.10.1
