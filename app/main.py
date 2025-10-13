@@ -1499,8 +1499,45 @@ class MainWindow(QMainWindow):
 
         self.accounts_tab = AccountsTabExtended()
         self.tasks_tab = TasksTab()
-        self.log_widget = QTextEdit()
+        
+        # Создаем большой журнал внизу (из файла 42)
+        from PySide6.QtWidgets import QPlainTextEdit, QToolBar
+        from PySide6.QtGui import QFont, QAction
+        
+        self.log_widget = QPlainTextEdit()  # Производительный для больших логов
         self.log_widget.setReadOnly(True)
+        self.log_widget.setFont(QFont("Consolas", 9))  # Моноширинный шрифт
+        self.log_widget.setLineWrapMode(QPlainTextEdit.NoWrap)  # Без переносов
+        self.log_widget.setMaximumBlockCount(10000)  # Лимит строк
+        
+        # Панель кнопок для журнала
+        log_toolbar = QToolBar()
+        log_toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        
+        clear_action = QAction("🗑 Очистить", self)
+        clear_action.triggered.connect(self.log_widget.clear)
+        log_toolbar.addAction(clear_action)
+        
+        copy_action = QAction("📋 Копировать всё", self)
+        copy_action.triggered.connect(lambda: QApplication.clipboard().setText(self.log_widget.toPlainText()))
+        log_toolbar.addAction(copy_action)
+        
+        save_action = QAction("💾 Сохранить", self)
+        save_action.triggered.connect(self._save_log)
+        log_toolbar.addAction(save_action)
+        
+        self.pause_log_action = QAction("⏸ Пауза автоскролла", self)
+        self.pause_log_action.setCheckable(True)
+        log_toolbar.addAction(self.pause_log_action)
+        
+        # Виджет журнала с кнопками
+        log_container = QWidget()
+        log_layout = QVBoxLayout(log_container)
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_layout.addWidget(QLabel("📋 Журнал задач"))
+        log_layout.addWidget(log_toolbar)
+        log_layout.addWidget(self.log_widget)
+        
         self.results_tab = FrequencyResultsTab()
         self.collect_tab = CollectTab(self.accounts_tab, self.tasks_tab, self.log_widget, self.results_tab)
         self.deep_tab = DeepTab(self.log_widget, self.tasks_tab)
@@ -1519,26 +1556,37 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.deep_tab, "Парсинг вглубь")
         tabs.addTab(self.tasks_tab, "История задач")
 
-        # Создаем правую панель с ключами (как в Key Collector)
+        # Создаем правую панель с ключами
         self.keys_panel = KeysPanel()
         
-        # Левая часть - вкладки + лог
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.addWidget(tabs)
-        left_layout.addWidget(QLabel("Журнал задач"))
-        left_layout.addWidget(self.log_widget)
+        # ВЕРТИКАЛЬНЫЙ сплиттер для левой части: вкладки сверху, журнал внизу (файл 42!)
+        left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.addWidget(tabs)
+        left_splitter.addWidget(log_container)
+        left_splitter.setSizes([500, 150])  # Вкладки больше, журнал меньше
+        left_splitter.setStretchFactor(0, 3)  # Вкладки растягиваются больше
+        left_splitter.setStretchFactor(1, 1)  # Журнал меньше
         
-        # QSplitter: слева вкладки, справа панель ключей
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(left_widget)
-        splitter.addWidget(self.keys_panel)
-        splitter.setSizes([700, 300])  # 70% слева, 30% справа
-        splitter.setStretchFactor(0, 7)  # Левая часть растягивается больше
-        splitter.setStretchFactor(1, 3)  # Правая часть меньше
+        # ГОРИЗОНТАЛЬНЫЙ сплиттер: левая часть, справа панель ключей
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.addWidget(left_splitter)
+        main_splitter.addWidget(self.keys_panel)
+        main_splitter.setSizes([700, 300])  # 70% слева, 30% справа
+        main_splitter.setStretchFactor(0, 7)
+        main_splitter.setStretchFactor(1, 3)
+        
+        # Сохраняем ссылку для QSettings
+        self.main_splitter = main_splitter
+        self.left_splitter = left_splitter
+        
+        # Восстанавливаем позицию сплиттеров из QSettings
+        settings = QtCore.QSettings("SemTool", "SemTool")
+        if settings.contains("main_splitter_state"):
+            main_splitter.restoreState(settings.value("main_splitter_state"))
+        if settings.contains("left_splitter_state"):
+            left_splitter.restoreState(settings.value("left_splitter_state"))
 
-        self.setCentralWidget(splitter)
+        self.setCentralWidget(main_splitter)
         
         # Создаем меню
         self._create_menu()
@@ -1564,6 +1612,21 @@ class MainWindow(QMainWindow):
         # Можно добавить другие инструменты
         tools_menu.addSeparator()
         tools_menu.addAction("⚙️ Настройки").setEnabled(False)  # Пока не реализовано
+    
+    def closeEvent(self, event):
+        """Сохранение состояния сплиттеров при закрытии (файл 42)"""
+        settings = QtCore.QSettings("SemTool", "SemTool")
+        settings.setValue("main_splitter_state", self.main_splitter.saveState())
+        settings.setValue("left_splitter_state", self.left_splitter.saveState())
+        super().closeEvent(event)
+    
+    def _save_log(self):
+        """Сохранить журнал в файл"""
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(self, "Сохранить журнал", "semtool.log", "Log (*.log);;Text (*.txt)")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.log_widget.toPlainText())
     
     def _open_proxy_manager(self):
         """Открыть окно Proxy Manager"""
