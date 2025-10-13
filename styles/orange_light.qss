@@ -1,19 +1,22 @@
-/* ===== SemTool Orange Light Theme (Yandex Design System) ===== */
-/* Основано на yandex-icon-pack-v1 + файл 44 */
-/* Приглушенный амбер #FFB300 вместо яркого оранжевого */
+/* ===== SemTool Beige-Gold Theme (файл 44 дизайн-система) ===== */
+/* Квадратные кнопки (r=6px), беж-золотая окантовка, тёплые цвета */
+/* Исправления из файла 44: кнопки 32/36/40px, единая окантовка */
 
-/* === ДИЗАЙН-ТОКЕНЫ ЯНДЕКС === */
-/* --ya-primary: #FFB300 (приглушённый амбер - акцент) */
-/* --ya-accent: #FF3D00 (запасной акцент, редко) */
-/* --ya-graphite: #1F1F1F (текст/иконки по умолчанию) */
-/* --ya-muted: #8D8E90 (вторичный текст/иконки) */
-/* --bg: #FFFFFF (фон) */
-/* --bg-soft: #F6F7F9 (мягкие панели/журнал) */
-/* --line: #E8E9EC (границы) */
-/* --focus: #1A73E8 (фокус-обводка) */
-/* --ok: #1E8E3E (успех) */
-/* --warn: #B26A00 (предупреждение) */
-/* --err: #D93025 (ошибка) */
+/* === ДИЗАЙН-ТОКЕНЫ BEIGE-GOLD (файл 44) === */
+/* --bg: #FFFFFF */
+/* --panel-border: #E6D9C2 (бежевая граница) */
+/* --panel-inset: #F7EFE1 (внутренняя окантовка) */
+/* --gold-500: #C9A858 (золото линии/акцентов) */
+/* --amber-500: #FFB300 (акцент на кнопках) */
+/* --text: #222 */
+/* --text-muted: #8B8E93 */
+/* --soft: #FAF7F2 (мягкий беж для подложек) */
+/* --line: #E6D9C2 (границы) */
+/* --ok: #198754, --warn: #B26A00, --err: #D32F2F */
+/* --focus: #1A73E8 */
+/* --r-sm: 6px (кнопки/инпуты) */
+/* --r-md: 10px (панели) */
+/* --h-s: 32px, --h-m: 36px, --h-l: 40px */
 
 /* === ГЛОБАЛЬНЫЕ СТИЛИ === */
 * {
@@ -23,18 +26,19 @@
 
 QMainWindow, QDialog, QWidget {
     background-color: #FFFFFF;
-    color: #0F172A;
+    color: #222;  /* --text из файла 44 */
 }
 
 /* === ГРУППЫ (Group Box) === */
+/* === ПАНЕЛИ И КАРТОЧКИ (единая окантовка файл 44) === */
 QGroupBox {
     background-color: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 14px;
+    border: 1px solid #E6D9C2;  /* --panel-border */
+    border-radius: 10px;  /* --r-md файл 44 */
     margin-top: 16px;
     padding: 16px 16px 12px 16px;
     font-weight: 600;
-    color: #0F172A;
+    color: #222;
 }
 
 QGroupBox::title {
@@ -42,62 +46,75 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 12px;
     padding: 0 8px;
-    color: #475569;
+    color: #8B8E93;  /* --text-muted файл 44 */
     background-color: #FFFFFF;
 }
 
-/* === ВКЛАДКИ (Tabs) === */
+/* === ВКЛАДКИ (Tabs) - квадратнее, нижний индикатор (файл 44) === */
 QTabWidget::pane {
-    border: none;
-    border-top: 2px solid #FFB300;
+    border: 1px solid #E6D9C2;  /* --panel-border */
     background: #FFFFFF;
     border-radius: 0;
 }
 
 QTabBar::tab {
-    background: #F7F8FA;
-    color: #475569;
-    padding: 10px 18px;
-    border: 1px solid #E5E7EB;
-    border-bottom: none;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
-    margin-right: 2px;
+    background: transparent;
+    color: #222;
+    min-height: 36px;  /* --h-m файл 44 */
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-top-left-radius: 6px;  /* --r-sm файл 44 */
+    border-top-right-radius: 6px;
+    margin-right: 8px;
     font-weight: 500;
 }
 
 QTabBar::tab:selected {
     background: #FFFFFF;
-    color: #0F172A;
-    border-color: #FFB300;
-    border-bottom: 2px solid #FFFFFF;
+    color: #222;
+    border-bottom: 2px solid #C9A858;  /* --gold-500 нижний индикатор */
     font-weight: 600;
 }
 
 QTabBar::tab:hover:!selected {
-    background: #FFF4EC;
-    color: #FFB300;
+    background: #FAF7F2;  /* --soft */
+    border-color: #C9A858;  /* --gold-500 */
 }
 
-/* === КНОПКИ (Buttons) - размеры из файла 44 === */
-/* Button M (средняя): 40px высота, 12x8px padding, 20x20 иконки */
+/* === КНОПКИ (Buttons) - квадратнее, файл 44 === */
+/* По умолчанию Button M: 36px высота, 6px радиус, 10px padding */
 QPushButton {
-    background-color: #FFB300;
-    color: #151515;  /* Темный текст на светлом фоне - файл 44 */
-    border: 1px solid #E39E00;
-    border-radius: 8px;  /* 8px по спецификации файл 44 */
-    padding: 0 12px;  /* Горизонтальные 12px - файл 44 */
-    font-weight: 600;
-    min-height: 40px;  /* Button M = 40px - файл 44 */
-    max-height: 40px;
+    background-color: #FFFFFF;
+    color: #222;  /* --text */
+    border: 1px solid #E6D9C2;  /* --panel-border */
+    border-radius: 6px;  /* --r-sm файл 44 (квадратнее!) */
+    padding: 0 10px;  /* Файл 44 */
+    font-weight: 500;
+    min-height: 36px;  /* --h-m файл 44 */
 }
 
 QPushButton:hover {
-    background-color: #E39E00;
-    border-color: #FFB300;
+    border-color: #C9A858;  /* --gold-500 */
 }
 
 QPushButton:pressed {
+    background-color: #FFF9E6;  /* Легкий янтарный файл 44 */
+}
+
+/* PRIMARY Кнопки (янтарный акцент) */
+QPushButton[primary="true"] {
+    background-color: #FFB300;  /* --amber-500 */
+    border-color: #E39E00;
+    color: #151515;  /* Темный текст файл 44 */
+    font-weight: 600;
+}
+
+QPushButton[primary="true"]:hover {
+    background-color: #E39E00;
+    filter: brightness(1.05);
+}
+
+QPushButton[primary="true"]:pressed {
     background-color: #FFC233;
 }
 
@@ -108,81 +125,79 @@ QPushButton:disabled {
 }
 
 /* Button S (маленькая): 32px высота - файл 44 */
-QPushButton[size="small"] {
-    min-height: 32px;
-    max-height: 32px;
+QPushButton[small="true"], QPushButton[size="small"] {
+    min-height: 32px;  /* --h-s файл 44 */
     padding: 0 10px;
     font-size: 13px;
 }
 
-/* Вторичные кнопки (не primary) */
+/* Button L (большая): 40px высота */
+QPushButton[large="true"] {
+    min-height: 40px;  /* --h-l файл 44 */
+}
+
+/* Вторичные кнопки (уже по умолчанию белые) */
 QPushButton[flat="true"] {
-    background-color: #FFFFFF;
-    color: #475569;
-    border: 1px solid #E8E9EC;
+    background-color: transparent;
+    border: 1px solid transparent;
 }
 
 QPushButton[flat="true"]:hover {
-    background-color: #FFFFFF;
-    color: #1F1F1F;
-    border-color: #FFB300;
+    border-color: #C9A858;  /* --gold-500 */
 }
 
-/* === TOOL BUTTONS (IconButton в toolbar) === */
-/* IconButton: 36px × 36px, 24x24 иконки - файл 44 */
+/* === TOOL BUTTONS (IconButton в toolbar) - квадратнее файл 44 === */
+/* IconButton: 36px × 36px, 6px радиус, 24x24 иконки */
 QToolButton {
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 8px;
-    padding: 6px;  /* 6px вокруг иконки - файл 44 */
-    color: #475569;
-    min-width: 36px;
-    min-height: 36px;
-    max-width: 36px;
-    max-height: 36px;
+    border-radius: 6px;  /* --r-sm квадратнее! */
+    padding: 6px;
+    color: #222;  /* --text */
+    min-width: 34px;
+    min-height: 34px;
 }
 
 QToolButton:hover {
     background: #FFFFFF;
-    border-color: #FFB300;
+    border-color: #C9A858;  /* --gold-500 */
 }
 
 QToolButton:checked {
-    background: #FFE7D6;
-    border: 1px solid #FFB300;
-    color: #FFB300;
+    background: #FAF7F2;  /* --soft */
+    border: 1px solid #C9A858;  /* --gold-500 */
+    color: #C9A858;
 }
 
 QToolButton:pressed {
-    background: #FFD6B8;
+    background: #FFF9E6;
 }
 
-/* === ПОЛЯ ВВОДА - размеры из файла 44 === */
-/* Input: 40px высота, 12x8px padding, border-radius 8px */
+/* === ПОЛЯ ВВОДА - квадратнее, файл 44 === */
+/* Input: 36px высота, 10px padding, 6px радиус */
 QLineEdit {
     background-color: #FFFFFF;
-    border: 1px solid #E8E9EC;
-    border-radius: 8px;
-    padding: 0 12px;
-    color: #1F1F1F;
-    selection-background-color: #FFF4EC;
-    selection-color: #1F1F1F;
-    min-height: 40px;
-    max-height: 40px;
+    border: 1px solid #E6D9C2;  /* --panel-border */
+    border-radius: 6px;  /* --r-sm */
+    padding: 0 10px;
+    color: #222;  /* --text */
+    selection-background-color: rgba(201, 168, 88, 0.2);
+    selection-color: #222;
+    min-height: 36px;  /* --h-m */
 }
 
 QTextEdit, QPlainTextEdit {
     background-color: #FFFFFF;
-    border: 1px solid #E8E9EC;
-    border-radius: 8px;
-    padding: 8px 12px;
-    color: #1F1F1F;
-    selection-background-color: #FFF4EC;
-    selection-color: #1F1F1F;
+    border: 1px solid #E6D9C2;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #222;
+    selection-background-color: rgba(201, 168, 88, 0.2);
+    selection-color: #222;
 }
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
-    border: 1px solid #FFB300;
+    border: 1px solid #C9A858;  /* --gold-500 */
     background-color: #FFFFFF;
 }
 
