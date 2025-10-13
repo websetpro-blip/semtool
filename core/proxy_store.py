@@ -7,7 +7,8 @@ from sqlalchemy import Column, Integer, String, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from typing import List, Dict, Optional
-from .db import Base, get_db_connection
+from .db import Base, SessionLocal, DB_PATH
+import sqlite3
 from ..services import accounts as account_service
 import re
 from urllib.parse import urlparse
@@ -74,8 +75,8 @@ def add_proxy(proxy_line: str) -> Optional[Dict]:
     if not parsed:
         return None
     
-    db = get_db_connection()
-    cursor = db.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     
     try:
         # Проверяем есть ли уже
@@ -97,19 +98,19 @@ def add_proxy(proxy_line: str) -> Optional[Dict]:
             datetime.utcnow(),
             datetime.utcnow()
         ))
-        db.commit()
+        conn.commit()
         
         parsed['id'] = cursor.lastrowid
         return parsed
         
     finally:
-        db.close()
+        conn.close()
 
 
 def get_all_proxies() -> List[Dict]:
     """Получить все прокси"""
-    db = get_db_connection()
-    cursor = db.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     
     try:
         cursor.execute("""
@@ -142,13 +143,13 @@ def get_all_proxies() -> List[Dict]:
         return results
         
     finally:
-        db.close()
+        conn.close()
 
 
 def update_proxy_status(proxy_id: int, status: str, latency_ms: Optional[int], error: str = ""):
     """Обновить статус проверки прокси"""
-    db = get_db_connection()
-    cursor = db.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     
     try:
         cursor.execute("""
@@ -156,9 +157,9 @@ def update_proxy_status(proxy_id: int, status: str, latency_ms: Optional[int], e
             SET last_status = ?, latency_ms = ?, last_error = ?, last_check = ?, updated_at = ?
             WHERE id = ?
         """, (status, latency_ms, error, datetime.utcnow(), datetime.utcnow(), proxy_id))
-        db.commit()
+        conn.commit()
     finally:
-        db.close()
+        conn.close()
 
 
 def sync_from_accounts() -> int:
@@ -177,10 +178,10 @@ def sync_from_accounts() -> int:
 
 def clear_all():
     """Очистить все прокси"""
-    db = get_db_connection()
-    cursor = db.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM proxies")
-        db.commit()
+        conn.commit()
     finally:
-        db.close()
+        conn.close()
