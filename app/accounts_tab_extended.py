@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..services import accounts as account_service
+from ..services.accounts import test_proxy, get_cookies_status, autologin_account
+from ..services.captcha import CaptchaService
 from ..workers.visual_browser_manager import VisualBrowserManager, BrowserStatus
 # Старый worker больше не используется, теперь CDP подход
 
@@ -1605,40 +1607,7 @@ class AccountsTabExtended(QWidget):
             QMessageBox.critical(self, "Ошибка", f"Не удалось запустить Chrome: {str(e)}")
         
     def _get_cookies_status(self, account):
-        """Получить статус куков для аккаунта"""
-        # Определяем профиль из пути аккаунта
-        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
-        
-        # Конвертируем в Path объект
-        if not isinstance(profile_path, Path):
-            profile_path = Path(profile_path)
-            
-        # Проверяем наличие файла куков
-        cookies_paths = [
-            profile_path / "Default" / "Cookies",
-            profile_path / "Default" / "Network" / "Cookies",
-            profile_path / "Cookies"
-        ]
-        
-        # Проверяем наличие куков
-        for cookie_path in cookies_paths:
-            if cookie_path.exists():
-                stat = cookie_path.stat()
-                if stat.st_size > 1000:  # Файл не пустой
-                    # Проверяем свежесть
-                    age_days = (datetime.now().timestamp() - stat.st_mtime) / 86400
-                    
-                    # Формируем статус
-                    if age_days < 1:
-                        status = "Fresh"
-                    elif age_days < 7:
-                        status = f"{int(age_days)}d old"
-                    else:
-                        status = "Expired"
-                        
-                    # Показываем размер файла для информации
-                    size_kb = stat.st_size / 1024
-                    return f"{status} ({size_kb:.1f}KB)"
-        
-        return "No cookies"
+        """Получить статус куков для аккаунта (используем функцию из файла 42)"""
+        # Используем функцию get_cookies_status() из services/accounts.py
+        return get_cookies_status(account)
 
