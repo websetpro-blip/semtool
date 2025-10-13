@@ -1,11 +1,13 @@
 """
 Proxy Manager - массовая загрузка и проверка прокси (как в Key Collector)
+Интегрирован с ProxyStore и аккаунтами
 """
 
 from PySide6 import QtWidgets, QtCore
-import re
+from PySide6.QtCore import QThread, Signal
 import asyncio
 import aiohttp
+import time
 from datetime import datetime
 from typing import Optional, List, Dict
 
@@ -13,6 +15,9 @@ try:
     from aiohttp_socks import ProxyConnector  # pip install aiohttp-socks
 except ImportError:
     ProxyConnector = None
+
+from ..core import proxy_store
+from ..services import accounts as account_service
 
 
 def parse_proxy_line(line: str) -> Optional[Dict]:
@@ -62,76 +67,145 @@ def parse_proxy_line(line: str) -> Optional[Dict]:
     }
 
 
-async def check_one_proxy(px: Dict, timeout_ms: int = 5000) -> tuple:
+async def check_http_proxy(px: Dict, timeout: float = 5.0) -> tuple:
+    """Проверка HTTP/HTTPS прокси"""
+    t0 = time.perf_counter()
+    timeout_obj = aiohttp.ClientTimeout(total=timeout)
+    
+    try:
+        async with aiohttp.ClientSession(timeout=timeout_obj) as session:
+            proxy_auth = None
+            if px["login"]:
+                proxy_auth = aiohttp.BasicAuth(px["login"], px["password"] or "")
+            
+            # httpbin по http, ssl=False - избегаем ssl:default на кривых http-прокси
+            async with session.get(
+                "http://httpbin.org/ip",
+                proxy=px["server"],
+                proxy_auth=proxy_auth,
+                ssl=False
+            ) as response:
+                await response.text()
+        
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return ("OK", elapsed_ms, "")
+    
+    except asyncio.TimeoutError:
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return ("TIMEOUT", elapsed_ms, "Превышен таймаут")
+    
+    except Exception as e:
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return ("FAIL", elapsed_ms, str(e)[:120])
+
+
+async def check_socks_proxy(px: Dict, timeout: float = 5.0) -> tuple:
+    """Проверка SOCKS прокси"""
+    if ProxyConnector is None:
+        return ("ERR", None, "aiohttp_socks не установлен")
+    
+    t0 = time.perf_counter()
+    
+    try:
+        conn = ProxyConnector.from_url(
+            px["server"],
+            rdns=True,
+            username=px["login"] or None,
+            password=px["password"] or None
+        )
+        
+        timeout_obj = aiohttp.ClientTimeout(total=timeout)
+        async with aiohttp.ClientSession(connector=conn, timeout=timeout_obj) as session:
+            async with session.get("http://httpbin.org/ip") as response:
+                await response.text()
+        
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return ("OK", elapsed_ms, "")
+    
+    except asyncio.TimeoutError:
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return ("TIMEOUT", elapsed_ms, "Превышен таймаут")
+    
+    except Exception as e:
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        return ("FAIL", elapsed_ms, str(e)[:120])
+
+
+async def check_one_proxy(px: Dict, timeout: float = 5.0) -> tuple:
     """
     Проверяет один прокси
     Возвращает: (status, latency_ms, error_message)
     """
-    url = "http://httpbin.org/ip"  # Быстрый тестовый сервис
-    timeout = aiohttp.ClientTimeout(total=timeout_ms / 1000)
-    
-    start_time = asyncio.get_event_loop().time()
-    
     try:
         if px["scheme"].startswith("socks"):
-            if ProxyConnector is None:
-                return ("ERR", None, "aiohttp_socks не установлен")
-            
-            conn = ProxyConnector.from_url(
-                px["server"],
-                rdns=True,
-                username=px["login"] or None,
-                password=px["password"] or None
-            )
-            
-            async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
-                async with session.get(url) as response:
-                    await response.text()
+            return await check_socks_proxy(px, timeout)
         else:
-            # HTTP/HTTPS прокси
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                proxy_auth = None
-                if px["login"]:
-                    proxy_auth = aiohttp.BasicAuth(px["login"], px["password"])
-                
-                async with session.get(
-                    url,
-                    proxy=px["server"],
-                    proxy_auth=proxy_auth,
-                    ssl=False  # Отключаем SSL для избежания ошибок с прокси
-                ) as response:
-                    await response.text()
-        
-        elapsed_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
-        return ("OK", elapsed_ms, "")
-    
-    except asyncio.TimeoutError:
-        elapsed_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
-        return ("TIMEOUT", elapsed_ms, "Превышен таймаут")
-    
+            return await check_http_proxy(px, timeout)
     except Exception as e:
-        elapsed_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
-        error_msg = str(e)[:120]  # Обрезаем длинные ошибки
-        return ("FAIL", elapsed_ms, error_msg)
+        return ("FAIL", None, str(e)[:120])
+
+
+class ProxyCheckThread(QThread):
+    """Поток для проверки прокси через asyncio"""
+    
+    progress = Signal(int, str, int, str)  # row, status, latency, error
+    finished = Signal()
+    
+    def __init__(self, proxies: List[Dict], timeout: float = 5.0):
+        super().__init__()
+        self.proxies = proxies
+        self.timeout = timeout
+        self._stop = False
+    
+    def stop(self):
+        self._stop = True
+    
+    def run(self):
+        """Запускает asyncio event loop в потоке"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._check_all())
+        finally:
+            loop.close()
+            self.finished.emit()
+    
+    async def _check_all(self):
+        """Проверяет все прокси параллельно"""
+        sem = asyncio.Semaphore(40)  # 40 параллельных проверок
+        
+        async def check_one(idx, px):
+            if self._stop:
+                return
+            
+            async with sem:
+                status, latency, error = await check_one_proxy(px, self.timeout)
+                self.progress.emit(idx, status, latency or 0, error)
+        
+        tasks = [check_one(i, px) for i, px in enumerate(self.proxies)]
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class ProxyManagerDialog(QtWidgets.QDialog):
     """Окно управления прокси (как в Key Collector)"""
     
-    COLUMNS = ["Proxy", "Тип", "Логин", "Пароль", "Статус", "Пинг (мс)", "Ошибка", "Проверено"]
+    COLUMNS = ["ID", "Proxy", "Тип", "Логин", "Пароль", "Статус", "Пинг (мс)", "Ошибка", "Проверено"]
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🔌 Прокси-менеджер")
         self.setModal(False)  # ВАЖНО: немодальное окно, не блокирует приложение
-        self.resize(1000, 600)
+        self.resize(1100, 650)
         
         # Данные
         self._proxies: List[Dict] = []
-        self._stop_flag = False
+        self._check_thread = None
         
         # Создаем UI
         self._create_ui()
+        
+        # Загружаем прокси из ProxyStore
+        self._load_from_store()
         
     def _create_ui(self):
         """Создает интерфейс"""
