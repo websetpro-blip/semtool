@@ -16,7 +16,14 @@ try:
 except ImportError:
     ProxyConnector = None
 
-from ..core import proxy_store
+try:
+    from ..core import proxy_store
+except ImportError:
+    # Если запускается отдельно
+    import sys
+    sys.path.insert(0, "C:/AI/yandex/semtool")
+    from core import proxy_store
+
 from ..services import accounts as account_service
 
 
@@ -261,7 +268,11 @@ class ProxyManagerDialog(QtWidgets.QDialog):
     
     def _load_from_store(self):
         """Загружает прокси из ProxyStore (БЕЗ обновления таблицы)"""
-        self._proxies = proxy_store.get_all_proxies()
+        try:
+            self._proxies = proxy_store.get_all_proxies()
+        except Exception as e:
+            print(f"[ERROR] Не удалось загрузить прокси из store: {e}")
+            self._proxies = []
     
     def _load_accounts_map(self):
         """Загружает привязку прокси к аккаунтам"""
