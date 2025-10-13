@@ -1509,17 +1509,17 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("""
             font-size: 14px;
             font-weight: 600;
-            color: #0F172A;
+            color: #222;  /* --text Beige-Gold */
             padding: 4px 0;
         """)
         
         self.status_block = QLabel("[--:--:--] Ожидание...")
         self.status_block.setStyleSheet("""
             QLabel {
-                background: #FFE7D6;
-                color: #D95500;
-                border: 2px solid #FF7A00;
-                border-radius: 10px;
+                background: #FAF7F2;  /* --soft Beige-Gold */
+                color: #C9A858;  /* --gold-500 */
+                border: 1px solid #E6D9C2;  /* --panel-border */
+                border-radius: 6px;  /* --r-sm квадратнее! */
                 padding: 12px 16px;
                 font-family: "JetBrains Mono", "Consolas", monospace;
                 font-size: 13px;
@@ -1562,7 +1562,7 @@ class MainWindow(QMainWindow):
         
         # Заголовок секции
         section_title = QLabel("Status and Activity")
-        section_title.setStyleSheet("font-size: 12px; color: #64748B; font-weight: 600;")
+        section_title.setStyleSheet("font-size: 12px; color: #8B8E93; font-weight: 600;")  /* --text-muted Beige-Gold */
         log_layout.addWidget(section_title)
         
         # Status блок
