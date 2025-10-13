@@ -258,31 +258,8 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         for i in [0, 2, 3, 4, 5, 7, 8]:
             header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
         
-        # Правая таблица "Аккаунты" (как в Кей-Коллекторе)
-        self.accounts_table = QtWidgets.QTableWidget(0, 3)
-        self.accounts_table.setHorizontalHeaderLabels(["Аккаунт", "Прокси", "Статус"])
-        self.accounts_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.accounts_table.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
-        self.accounts_table.setAlternatingRowColors(True)
-        self.accounts_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.accounts_table.setMinimumWidth(350)
-        self.accounts_table.setMaximumWidth(500)
-        
-        # Настройка колонок правой таблицы
-        acc_header = self.accounts_table.horizontalHeader()
-        acc_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Аккаунт
-        acc_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)  # Прокси
-        acc_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Статус
-        
-        # QSplitter для разделения таблиц (как в Кей-Коллекторе)
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(self.table)
-        splitter.addWidget(self.accounts_table)
-        splitter.setStretchFactor(0, 2)  # Левая таблица шире
-        splitter.setStretchFactor(1, 1)  # Правая таблица уже
-        
-        layout.addWidget(splitter)
-        
+        # Добавляем только основную таблицу прокси (БЕЗ правой таблицы Аккаунты)
+        layout.addWidget(self.table)
         # Подключаем сигналы
         self.btn_paste.clicked.connect(self._on_paste)
         self.btn_load_file.clicked.connect(self._on_load_file)
@@ -320,7 +297,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         # Обновляем таблицы ОДИН РАЗ после загрузки всего (прокси + привязка + аккаунты)
         self._refresh_table()
-        self._refresh_accounts_table()
+        # self._refresh_accounts_table()  # Отключено
     
     def _refresh_table(self):
         """Обновляет таблицу"""
@@ -566,7 +543,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.information(
                 self,
                 "Применено",
-                f"Прокси применены к {updated} аккаунтам\n\nПроверьте правую таблицу Аккаунты"
+                f"Прокси применены к {updated} аккаунтам"
             )
     
     def _on_auto_distribute(self):
