@@ -5,7 +5,6 @@ According to semtool дорожная карта.md
 """
 
 import asyncio
-import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
@@ -68,37 +67,40 @@ class VisualBrowserManager:
         browser_instance.profile_path = profile_path
         
         try:
-            # НЕ УБИВАЕМ Chrome здесь! Это делается один раз в start_all_browsers()
-            # Иначе каждый новый браузер убивает предыдущие!
+            # Парсим прокси (из файла 41)
+            from ..utils.proxy import parse_proxy
+            proxy_config = parse_proxy(proxy) if proxy else None
             
-            # Start Chrome with CDP - ONLY necessary flags!
-            cdp_port = 9222 + browser_id  # Different port for each browser
-            chrome_process = subprocess.Popen([
-                self.CHROME_PATH,
-                f"--user-data-dir={profile_path}",
-                f"--remote-debugging-port={cdp_port}",
-                "https://wordstat.yandex.ru/?region=225"
-            ])
+            if proxy_config:
+                print(f"[Browser {browser_id}] Proxy: {proxy_config['server']} (user: {proxy_config.get('username', 'none')})")
             
-            await asyncio.sleep(2)  # Уменьшили с 5 до 2 сек для быстрого запуска
+            # Используем launch_persistent_context с прокси (правильный способ из файла 41!)
+            browser_instance.context = await self.playwright.chromium.launch_persistent_context(
+                user_data_dir=profile_path,
+                channel="chrome",  # Системный Chrome
+                headless=False,
+                proxy=proxy_config,  # ← ВАЖНО: прокси на уровне Playwright API!
+                viewport={"width": 1280, "height": 900},
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--start-maximized',
+                    '--no-first-run',
+                    '--no-default-browser-check'
+                ]
+            )
             
-            # Connect via CDP
-            self.browser = await self.playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
-            contexts = self.browser.contexts
-            
-            if contexts:
-                browser_instance.context = contexts[0]
-                pages = browser_instance.context.pages
-                browser_instance.page = pages[0] if pages else await browser_instance.context.new_page()
-                browser_instance.status = BrowserStatus.LOGGED_IN
-                print("[Browser] Connected to Chrome via CDP")
+            # Получаем или создаем страницу
+            if browser_instance.context.pages:
+                browser_instance.page = browser_instance.context.pages[0]
             else:
-                print("[Browser] No contexts found, creating new page...")
-                browser_instance.context = await self.browser.new_context()
                 browser_instance.page = await browser_instance.context.new_page()
-                await browser_instance.page.goto("https://wordstat.yandex.ru/")
+            
+            # Открываем Wordstat
+            await browser_instance.page.goto("https://wordstat.yandex.ru/?region=225", wait_until="networkidle")
+            browser_instance.status = BrowserStatus.LOGGED_IN
+            print(f"[Browser {browser_id}] Chrome started with Playwright")
                 
-            self.browsers[0] = browser_instance
+            self.browsers[browser_id] = browser_instance
             return browser_instance
             
         except Exception as e:
@@ -111,12 +113,7 @@ class VisualBrowserManager:
         
         print(f"\n[VISUAL] Starting {self.num_browsers} browsers ПАРАЛЛЕЛЬНО...")
         
-        # Kill existing Chrome ОДИН РАЗ перед запуском всех браузеров
-        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/T"], 
-                      capture_output=True, shell=True)
-        await asyncio.sleep(2)
-        
-        # Start playwright
+        # Start playwright (Playwright сам управляет процессами)
         self.playwright = await async_playwright().start()
         
         # Подготавливаем задачи для параллельного запуска
@@ -153,12 +150,20 @@ class VisualBrowserManager:
         print("="*60 + "\n")
     
     async def close_all(self):
-        """Close browser"""
-        if self.browser:
-            await self.browser.close()
+        """Close all browsers"""
+        for browser_id, browser_instance in self.browsers.items():
+            try:
+                if browser_instance.context:
+                    await browser_instance.context.close()
+                    print(f"[Browser {browser_id}] Closed")
+            except:
+                pass
+        
         if self.playwright:
             await self.playwright.stop()
-        print("[Browser] Closed")
+            print("[Playwright] Stopped")
+        
+        self.browsers = {}
     
     def calculate_window_position(self, browser_id: int) -> Dict[str, int]:
         """Window position (only one browser)"""
