@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSignalBlocker
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSignalBlocker, QSettings
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -1580,7 +1580,7 @@ class MainWindow(QMainWindow):
         self.left_splitter = left_splitter
         
         # Восстанавливаем позицию сплиттеров из QSettings
-        settings = QtCore.QSettings("SemTool", "SemTool")
+        settings = QSettings("SemTool", "SemTool")
         if settings.contains("main_splitter_state"):
             main_splitter.restoreState(settings.value("main_splitter_state"))
         if settings.contains("left_splitter_state"):
@@ -1615,7 +1615,7 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Сохранение состояния сплиттеров при закрытии (файл 42)"""
-        settings = QtCore.QSettings("SemTool", "SemTool")
+        settings = QSettings("SemTool", "SemTool")
         settings.setValue("main_splitter_state", self.main_splitter.saveState())
         settings.setValue("left_splitter_state", self.left_splitter.saveState())
         super().closeEvent(event)
