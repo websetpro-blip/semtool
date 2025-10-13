@@ -106,3 +106,16 @@ def mark_error(account_id: int) -> Account:
 def mark_ok(account_id: int) -> Account:
     return set_status(account_id, 'ok')
 
+
+def update_account_proxy(account_name: str, proxy: str | None) -> Account:
+    """Обновить прокси у аккаунта по имени"""
+    with SessionLocal() as session:
+        stmt = select(Account).where(Account.name == account_name)
+        account = session.execute(stmt).scalar_one_or_none()
+        if account is None:
+            raise ValueError(f'Account {account_name} not found')
+        account.proxy = proxy
+        session.commit()
+        session.refresh(account)
+        return account
+
