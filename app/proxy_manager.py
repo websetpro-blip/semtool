@@ -258,7 +258,30 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         for i in [0, 2, 3, 4, 5, 7, 8]:
             header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
         
-        layout.addWidget(self.table)
+        # Правая таблица "Аккаунты" (как в Кей-Коллекторе)
+        self.accounts_table = QtWidgets.QTableWidget(0, 3)
+        self.accounts_table.setHorizontalHeaderLabels(["Аккаунт", "Прокси", "Статус"])
+        self.accounts_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.accounts_table.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+        self.accounts_table.setAlternatingRowColors(True)
+        self.accounts_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.accounts_table.setMinimumWidth(350)
+        self.accounts_table.setMaximumWidth(500)
+        
+        # Настройка колонок правой таблицы
+        acc_header = self.accounts_table.horizontalHeader()
+        acc_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Аккаунт
+        acc_header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)  # Прокси
+        acc_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Статус
+        
+        # QSplitter для разделения таблиц (как в Кей-Коллекторе)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.addWidget(self.table)
+        splitter.addWidget(self.accounts_table)
+        splitter.setStretchFactor(0, 2)  # Левая таблица шире
+        splitter.setStretchFactor(1, 1)  # Правая таблица уже
+        
+        layout.addWidget(splitter)
         
         # Подключаем сигналы
         self.btn_paste.clicked.connect(self._on_paste)
@@ -283,16 +306,21 @@ class ProxyManagerDialog(QtWidgets.QDialog):
     def _load_accounts_map(self):
         """Загружает привязку прокси к аккаунтам"""
         self._accounts_map = {}
+        self._accounts_list = []
         accounts = account_service.list_accounts()
         
         for acc in accounts:
-            if acc.proxy and acc.name not in ["demo_account", "wordstat_main"]:
-                if acc.proxy not in self._accounts_map:
-                    self._accounts_map[acc.proxy] = []
-                self._accounts_map[acc.proxy].append(acc.name)
+            if acc.name not in ["demo_account", "wordstat_main"]:
+                self._accounts_list.append(acc)
+                
+                if acc.proxy:
+                    if acc.proxy not in self._accounts_map:
+                        self._accounts_map[acc.proxy] = []
+                    self._accounts_map[acc.proxy].append(acc.name)
         
-        # Обновляем таблицу ОДИН РАЗ после загрузки всего (прокси + привязка)
+        # Обновляем таблицы ОДИН РАЗ после загрузки всего (прокси + привязка + аккаунты)
         self._refresh_table()
+        self._refresh_accounts_table()
     
     def _refresh_table(self):
         """Обновляет таблицу"""
@@ -532,13 +560,13 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 account_service.update_account_proxy(acc_name, proxy['raw'])
                 updated += 1
             
-            # Обновляем привязку и таблицу
+            # Обновляем привязку и обе таблицы
             self._load_accounts_map()
             
             QtWidgets.QMessageBox.information(
                 self,
                 "Применено",
-                f"Прокси применены к {updated} аккаунтам"
+                f"Прокси применены к {updated} аккаунтам\n\nПроверьте правую таблицу Аккаунты"
             )
     
     def _on_auto_distribute(self):
@@ -585,7 +613,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             account_service.update_account_proxy(acc.name, proxy['raw'])
             updated += 1
         
-        # Обновляем привязку и таблицу
+        # Обновляем привязку и обе таблицы
         self._load_accounts_map()
         
         QtWidgets.QMessageBox.information(
@@ -594,7 +622,8 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             f"✅ Прокси распределены по {updated} аккаунтам\n\n"
             f"Рабочих прокси: {len(ok_proxies)}\n"
             f"Аккаунтов: {len(target_accounts)}\n"
-            f"Метод: round-robin (по кругу)"
+            f"Метод: round-robin (по кругу)\n\n"
+            f"Проверьте правую таблицу Аккаунты"
         )
     
     def _on_export(self):
