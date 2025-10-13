@@ -248,9 +248,8 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         self.btn_close.clicked.connect(self.close)
     
     def _load_from_store(self):
-        """Загружает прокси из ProxyStore"""
+        """Загружает прокси из ProxyStore (БЕЗ обновления таблицы)"""
         self._proxies = proxy_store.get_all_proxies()
-        self._refresh_table()
     
     def _load_accounts_map(self):
         """Загружает привязку прокси к аккаунтам"""
@@ -263,10 +262,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                     self._accounts_map[acc.proxy] = []
                 self._accounts_map[acc.proxy].append(acc.name)
         
-        print(f"[Proxy Manager] Загружена привязка для {len(self._accounts_map)} прокси")
-        print(f"[Proxy Manager] Пример привязки: {list(self._accounts_map.items())[:1]}")
-        
-        # Обновляем таблицу после загрузки
+        # Обновляем таблицу ОДИН РАЗ после загрузки всего (прокси + привязка)
         self._refresh_table()
     
     def _refresh_table(self):
@@ -321,6 +317,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 added += 1
         
         self._load_from_store()
+        self._load_accounts_map()
         
         QtWidgets.QMessageBox.information(
             self,
@@ -349,6 +346,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                         added += 1
             
             self._load_from_store()
+            self._load_accounts_map()
             
             QtWidgets.QMessageBox.information(
                 self,
@@ -421,7 +419,8 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         """Проверка завершена"""
         self.btn_check_all.setEnabled(True)
         self.btn_stop.setEnabled(False)
-        self._load_from_store()  # Перезагружаем из БД
+        self._load_from_store()
+        self._load_accounts_map()  # Перезагружаем из БД с привязкой
     
     def _on_stop(self):
         """Остановить проверку"""
@@ -542,6 +541,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         if reply == QtWidgets.QMessageBox.Yes:
             proxy_store.clear_all()
             self._load_from_store()
+            self._load_accounts_map()
     
     def _update_stats(self):
         """Обновляет статистику"""
