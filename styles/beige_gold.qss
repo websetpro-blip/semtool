@@ -1,0 +1,178 @@
+/* ===== BEIGE-GOLD ДИЗАЙН-СИСТЕМА (ФАЙЛ 44) ===== */
+/* Точная копия из файла 44 - НЕ МЕНЯЙ! */
+
+/* Панели с бежевой окантовкой */
+QWidget[panel="true"]{
+  background:#FFFFFF;
+  border:1px solid #E6D9C2;
+  border-radius:10px;
+}
+
+/* Кнопки квадратнее и ниже */
+QPushButton{
+  min-height:36px; padding:0 10px; border-radius:6px;
+  border:1px solid #E6D9C2; background:#FFFFFF; color:#222;
+}
+QPushButton:hover{ border:1px solid #C9A858; }
+QPushButton:pressed{ background:#FFF9E6; }
+QPushButton:focus{ outline:none; border:1px solid #1A73E8; }
+QPushButton[small="true"]{ min-height:32px; }
+QPushButton[primary="true"]{ background:#FFB300; color:#151515; border:1px solid #E39E00; }
+
+/* Табы без «пилюль» */
+QTabBar::tab{ height:36px; padding:0 12px; border:none; margin:0 8px 0 0; }
+QTabBar::tab:selected{ border-bottom:2px solid #C9A858; }
+
+/* Таблица */
+QTableView{ gridline-color:#E6D9C2; }
+QHeaderView::section{ height:36px; padding-left:12px; border-bottom:1px solid #E6D9C2; background:#FFFFFF; }
+
+/* Статус-бар и журнал */
+QStatusBar{ background:#FFFFFF; border-top:1px solid #E6D9C2; min-height:44px; }
+QPlainTextEdit#jobLog, QTextEdit#jobLog{
+  background:#F6F2EA; border:1px solid #E6D9C2; border-radius:10px; padding:8px; font:13px "Cascadia Mono", "Consolas", monospace;
+}
+
+/* Дополнительно из CSS версии файла 44 - адаптировано для Qt */
+
+/* Поля ввода */
+QLineEdit{
+  height:36px; padding:0 10px; border-radius:6px;
+  border:1px solid #E6D9C2; background:#FFFFFF; color:#222;
+}
+QLineEdit:focus{ border:1px solid #C9A858; }
+
+/* Комбобоксы */
+QComboBox{
+  min-height:36px; padding:0 10px; border-radius:6px;
+  border:1px solid #E6D9C2; background:#FFFFFF; color:#222;
+}
+QComboBox:hover{ border:1px solid #C9A858; }
+QComboBox::drop-down{ border:none; }
+QComboBox QAbstractItemView{
+  border:1px solid #E6D9C2; 
+  background:#FFFFFF;
+  selection-background-color:#FAF7F2;
+  selection-color:#222;
+}
+
+/* ToolButton для иконок */
+QToolButton{
+  width:34px; height:34px; border-radius:6px;
+  border:1px solid transparent; background:transparent;
+}
+QToolButton:hover{ border:1px solid #C9A858; background:#FFF; }
+
+/* GroupBox */
+QGroupBox{
+  background:#FFFFFF; border:1px solid #E6D9C2;
+  border-radius:10px; margin-top:12px; padding-top:12px;
+}
+QGroupBox::title{
+  subcontrol-origin:margin; left:12px;
+  padding:0 8px; color:#8B8E93; background:#FFFFFF;
+}
+
+/* TextEdit/PlainTextEdit */
+QTextEdit, QPlainTextEdit{
+  background:#FFFFFF; border:1px solid #E6D9C2;
+  border-radius:6px; padding:8px; color:#222;
+}
+
+/* ScrollBar */
+QScrollBar:vertical{
+  width:12px; background:#FFFFFF;
+  border:1px solid #E6D9C2; border-radius:6px;
+}
+QScrollBar::handle:vertical{
+  background:#C9A858; border-radius:5px; min-height:20px;
+}
+QScrollBar::handle:vertical:hover{ background:#B09548; }
+
+/* CheckBox */
+QCheckBox{ color:#222; }
+QCheckBox::indicator{
+  width:18px; height:18px; border-radius:4px;
+  border:1px solid #E6D9C2; background:#FFFFFF;
+}
+QCheckBox::indicator:checked{
+  background:#FFB300;
+  image:url(:/icons/check.svg);
+}
+
+/* RadioButton */
+QRadioButton{ color:#222; }
+QRadioButton::indicator{
+  width:18px; height:18px; border-radius:9px;
+  border:1px solid #E6D9C2; background:#FFFFFF;
+}
+QRadioButton::indicator:checked{
+  background:#FFB300;
+}
+
+/* ProgressBar */
+QProgressBar{
+  height:8px; border-radius:4px;
+  background:#F6F2EA; border:1px solid #E6D9C2;
+  text-align:center;
+}
+QProgressBar::chunk{
+  background:#FFB300; border-radius:3px;
+}
+
+/* Глобальные настройки */
+QWidget{
+  font-family:"Segoe UI", "Inter", system-ui, sans-serif;
+  font-size:14px;
+}
+
+QMainWindow, QDialog{
+  background:#FFFFFF;
+  color:#222;
+}
+
+/* Меню */
+QMenuBar{
+  background:#FFFFFF;
+  border-bottom:1px solid #E6D9C2;
+}
+QMenuBar::item{ padding:8px 12px; color:#222; }
+QMenuBar::item:selected{ background:#FAF7F2; }
+QMenu{
+  background:#FFFFFF; border:1px solid #E6D9C2;
+  border-radius:6px;
+}
+QMenu::item{ padding:8px 20px; }
+QMenu::item:selected{ background:#FAF7F2; }
+
+/* Splitter */
+QSplitter::handle{
+  background:#E6D9C2; width:1px;
+}
+
+/* Dock Widget */
+QDockWidget{
+  color:#222;
+}
+QDockWidget::title{
+  background:#FAF7F2; border:1px solid #E6D9C2;
+  padding:4px; text-align:left;
+}
+
+/* Tab Widget */
+QTabWidget::pane{
+  border:1px solid #E6D9C2; background:#FFFFFF;
+}
+
+/* Label с классами */
+QLabel[heading="true"]{
+  font-size:16px; font-weight:600; color:#222;
+}
+QLabel[muted="true"]{
+  color:#8B8E93;
+}
+
+/* Disabled состояния */
+*:disabled{
+  color:#8B8E93; opacity:0.6;
+}

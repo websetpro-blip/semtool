@@ -1527,10 +1527,11 @@ class MainWindow(QMainWindow):
             }
         """)
         
-        # Используем QTextEdit для подсветки логов (файл 43: INFO/ERROR/WARN цветом)
+        # Используем QTextEdit для подсветки логов (файл 44)
         self.log_widget = QTextEdit()  # QTextEdit поддерживает HTML для подсветки
         self.log_widget.setReadOnly(True)
-        self.log_widget.setFont(QFont("JetBrains Mono", 9))  # Шрифт из файла 43
+        self.log_widget.setObjectName("jobLog")  # ВАЖНО! Для стиля из файла 44
+        self.log_widget.setFont(QFont("Cascadia Mono", 9))  # Шрифт из файла 44
         self.log_widget.setLineWrapMode(QTextEdit.NoWrap)  # Без переносов
         self.log_widget.document().setMaximumBlockCount(10000)  # Лимит строк
         
@@ -1740,7 +1741,8 @@ class MainWindow(QMainWindow):
         
         # Путь к QSS файлам
         styles_dir = Path(__file__).parent.parent / "styles"
-        qss_file = styles_dir / ("orange_dark.qss" if is_dark else "orange_light.qss")
+        # Используем Beige-Gold из файла 44 (НЕ orange!)
+        qss_file = styles_dir / "beige_gold.qss"
         
         # Загружаем QSS стили
         try:
