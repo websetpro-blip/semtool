@@ -683,3 +683,60 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         fail = sum(1 for px in self._proxies if px['last_status'] in ('FAIL', 'TIMEOUT', 'ERR'))
         
         self.lbl_stats.setText(f"Всего: {total} | OK: {ok} | FAIL: {fail}")
+
+    
+    def _refresh_accounts_table(self):
+        """Обновляет правую таблицу аккаунтов"""
+        if not hasattr(self, '_accounts_list'):
+            return
+        
+        if not hasattr(self, 'accounts_table'):
+            return
+        
+        self.accounts_table.setRowCount(len(self._accounts_list))
+        
+        for row, acc in enumerate(self._accounts_list):
+            # Аккаунт
+            name_item = QtWidgets.QTableWidgetItem(acc.name)
+            name_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            self.accounts_table.setItem(row, 0, name_item)
+            
+            # Прокси (короткий формат для читаемости)
+            proxy_text = ""
+            if acc.proxy:
+                # Показываем только host:port (без логина/пароля)
+                try:
+                    from ..utils.proxy import parse_proxy
+                    parsed = parse_proxy(acc.proxy)
+                    if parsed:
+                        proxy_text = parsed['server'].replace('http://', '').replace('https://', '').replace('socks5://', '')
+                    else:
+                        proxy_text = acc.proxy[:30]
+                except:
+                    proxy_text = acc.proxy[:30]
+            
+            proxy_item = QtWidgets.QTableWidgetItem(proxy_text)
+            proxy_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            
+            if acc.proxy:
+                proxy_item.setToolTip(f"Полный прокси:\n{acc.proxy}")
+            
+            self.accounts_table.setItem(row, 1, proxy_item)
+            
+            # Статус (куки)
+            try:
+                from ..services.accounts import get_cookies_status
+                cookies_status = get_cookies_status(acc)
+            except:
+                cookies_status = "?"
+            
+            status_item = QtWidgets.QTableWidgetItem(cookies_status)
+            status_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            status_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            
+            if cookies_status == "Fresh":
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#4CAF50")))
+            elif cookies_status == "Expired":
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#F44336")))
+            
+            self.accounts_table.setItem(row, 2, status_item)
