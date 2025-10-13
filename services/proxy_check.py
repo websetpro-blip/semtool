@@ -11,12 +11,13 @@ from typing import Optional, Dict, Any
 
 async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, Any]:
     """
-    Проверка прокси через https://yandex.ru/internet
+    Проверка прокси через http://httpbin.org/ip (правильный метод без ssl:default ошибок)
     
     Args:
         proxy_url: URL прокси в формате:
             - ip:port@user:pass (SemTool формат)
             - http://user:pass@ip:port (стандартный URL)
+            - socks5://user:pass@ip:port (SOCKS прокси)
         timeout: Таймаут в секундах
     
     Returns:
@@ -40,9 +41,10 @@ async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, A
     try:
         # Парсим прокси в правильный формат для aiohttp
         proxy_auth = None
+        is_socks = False
         
         # Формат: ip:port@user:pass (из SemTool)
-        if '@' in proxy_url and not proxy_url.startswith('http'):
+        if '@' in proxy_url and not proxy_url.startswith('http') and not proxy_url.startswith('socks'):
             parts = proxy_url.split('@')
             if len(parts) == 2:
                 host_port = parts[0]
@@ -55,43 +57,83 @@ async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, A
         # Формат: http://user:pass@ip:port
         elif '@' in proxy_url and '://' in proxy_url:
             import re
-            match = re.match(r'(https?://)([^:]+):([^@]+)@(.+)', proxy_url)
-            if match:
-                protocol, user, password, host_port = match.groups()
-                proxy_url_clean = f"{protocol}{host_port}"
-                proxy_auth = aiohttp.BasicAuth(user, password)
-            else:
+            if proxy_url.startswith('socks'):
+                # SOCKS прокси - нужен ProxyConnector (пока возвращаем ошибку)
+                is_socks = True
                 proxy_url_clean = proxy_url
+            else:
+                match = re.match(r'(https?://)([^:]+):([^@]+)@(.+)', proxy_url)
+                if match:
+                    protocol, user, password, host_port = match.groups()
+                    proxy_url_clean = f"{protocol}{host_port}"
+                    proxy_auth = aiohttp.BasicAuth(user, password)
+                else:
+                    proxy_url_clean = proxy_url
         else:
             # Без авторизации
-            if not proxy_url.startswith('http'):
+            if proxy_url.startswith('socks'):
+                is_socks = True
+                proxy_url_clean = proxy_url
+            elif not proxy_url.startswith('http'):
                 proxy_url_clean = f"http://{proxy_url}"
             else:
                 proxy_url_clean = proxy_url
         
+        # SOCKS прокси требуют aiohttp_socks
+        if is_socks:
+            try:
+                from aiohttp_socks import ProxyConnector
+                # Парсим SOCKS URL
+                import re
+                match = re.match(r'socks[45]?://(?:([^:]+):([^@]+)@)?(.+)', proxy_url)
+                if match:
+                    user, password, host_port = match.groups()
+                    conn = ProxyConnector.from_url(
+                        proxy_url,
+                        rdns=True,
+                        username=user or None,
+                        password=password or None
+                    )
+                    
+                    timeout_obj = aiohttp.ClientTimeout(total=timeout)
+                    async with aiohttp.ClientSession(connector=conn, timeout=timeout_obj) as session:
+                        async with session.get("http://httpbin.org/ip") as response:
+                            data = await response.json()
+                            latency_ms = int((time.time() - start_time) * 1000)
+                            return {
+                                "ok": True,
+                                "ip": data.get("origin", "ok"),
+                                "latency_ms": latency_ms,
+                                "error": None
+                            }
+            except ImportError:
+                return {
+                    "ok": False,
+                    "ip": None,
+                    "latency_ms": 0,
+                    "error": "aiohttp_socks не установлен для SOCKS прокси"
+                }
+        
+        # HTTP/HTTPS прокси - используем httpbin.org/ip с ssl=False
         timeout_obj = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(
             timeout=timeout_obj,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         ) as session:
             async with session.get(
-                "https://yandex.ru/internet", 
+                "http://httpbin.org/ip",  # HTTP вместо HTTPS - избегаем ssl:default ошибок
                 proxy=proxy_url_clean,
-                proxy_auth=proxy_auth
+                proxy_auth=proxy_auth,
+                ssl=False  # Важно для HTTP прокси
             ) as response:
                 response.raise_for_status()
+                data = await response.json()
                 
                 latency_ms = int((time.time() - start_time) * 1000)
                 
-                # Пытаемся извлечь IP из заголовков
-                ip = response.headers.get("x-client-ip")
-                if not ip:
-                    # Если в заголовках нет, пробуем из тела
-                    ip = "ok"
-                
                 return {
                     "ok": True,
-                    "ip": ip,
+                    "ip": data.get("origin", "ok"),
                     "latency_ms": latency_ms,
                     "error": None
                 }

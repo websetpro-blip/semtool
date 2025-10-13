@@ -1609,7 +1609,17 @@ class MainWindow(QMainWindow):
         proxy_action.setShortcut("Ctrl+P")
         proxy_action.triggered.connect(self._open_proxy_manager)
         
-        # Можно добавить другие инструменты
+        # Переключатель темы (файл 43)
+        tools_menu.addSeparator()
+        theme_action = tools_menu.addAction("🎨 Переключить тему (Светлая/Темная)")
+        theme_action.setShortcut("Ctrl+T")
+        theme_action.triggered.connect(self._toggle_theme)
+        
+        # Загружаем сохраненную тему или используем светлую по умолчанию (файл 43)
+        self.settings = QSettings("SemTool", "SemTool")
+        self.is_dark_theme = self.settings.value("dark_theme", False, type=bool)
+        self._apply_theme(self.is_dark_theme)
+        
         tools_menu.addSeparator()
         tools_menu.addAction("⚙️ Настройки").setEnabled(False)  # Пока не реализовано
     
@@ -1639,6 +1649,37 @@ class MainWindow(QMainWindow):
             # Если окно уже открыто - активируем его
             self.proxy_manager.raise_()
             self.proxy_manager.activateWindow()
+    
+    def _toggle_theme(self):
+        """Переключить тему (файл 43)"""
+        self.is_dark_theme = not self.is_dark_theme
+        self.settings.setValue("dark_theme", self.is_dark_theme)
+        self._apply_theme(self.is_dark_theme)
+    
+    def _apply_theme(self, is_dark: bool):
+        """Применить Orange Light/Dark дизайн-систему через QSS (файл 43 доп)"""
+        from pathlib import Path
+        
+        app = QApplication.instance()
+        app.setStyle("Fusion")
+        
+        # Путь к QSS файлам
+        styles_dir = Path(__file__).parent.parent / "styles"
+        qss_file = styles_dir / ("orange_dark.qss" if is_dark else "orange_light.qss")
+        
+        # Загружаем QSS стили
+        try:
+            if qss_file.exists():
+                with open(qss_file, 'r', encoding='utf-8') as f:
+                    stylesheet = f.read()
+                app.setStyleSheet(stylesheet)
+                print(f"[Theme] Загружена Orange {'Dark' if is_dark else 'Light'} дизайн-система из {qss_file.name}")
+            else:
+                print(f"[Theme] WARN: QSS файл не найден: {qss_file}")
+                print(f"[Theme] Используется Fusion без кастомных стилей")
+        except Exception as e:
+            print(f"[Theme] ERROR при загрузке QSS: {e}")
+            print(f"[Theme] Используется Fusion без кастомных стилей")
     
     def _update_keys_panel(self):
         """Обновить панель ключей из результатов"""

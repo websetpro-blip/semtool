@@ -149,17 +149,23 @@ class ProxyCheckThread(QThread):
 class ProxyManagerDialog(QtWidgets.QDialog):
     """Окно управления прокси (как в Key Collector)"""
     
-    COLUMNS = ["ID", "Proxy", "Тип", "Логин", "Статус", "Пинг (мс)", "Используется", "Ошибка", "Проверено"]
+    BASE_COLUMNS = ["ID", "Proxy", "Тип", "Логин", "Статус", "Пинг (мс)"]
+    TAIL_COLUMNS = ["Ошибка", "Проверено"]
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🔌 Прокси-менеджер")
         self.setModal(False)  # ВАЖНО: немодальное окно
-        self.resize(1200, 650)
+        self.resize(1400, 650)
         
         self._proxies: List[Dict] = []
         self._check_thread = None
         self._accounts_map = {}  # {proxy_raw: [account_names]}
+        self._accounts_list = []  # Список аккаунтов для динамических столбцов
+        self._account_columns = []  # Список имен аккаунтов для столбцов
+        
+        # ВАЖНО: Загружаем аккаунты ПЕРЕД созданием UI (для динамических столбцов)
+        self._load_accounts_info()
         
         self._create_ui()
         self._load_from_store()
@@ -174,8 +180,14 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         # ВАЖНО: загружаем привязку и обновляем таблицу ПОСЛЕ загрузки прокси
         self._load_accounts_map()
     
+    def _load_accounts_info(self):
+        """Загружает список аккаунтов для динамических столбцов"""
+        accounts = account_service.list_accounts()
+        self._accounts_list = [acc for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
+        self._account_columns = [acc.name for acc in self._accounts_list]
+    
     def _create_ui(self):
-        """Создает интерфейс"""
+        """Создает интерфейс с динамическими столбцами аккаунтов"""
         layout = QtWidgets.QVBoxLayout(self)
         
         # Кнопки управления
@@ -231,9 +243,12 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         layout.addLayout(settings_layout)
         
-        # Таблица (стандартный стиль как везде в приложении)
-        self.table = QtWidgets.QTableWidget(0, len(self.COLUMNS))
-        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        # ДИНАМИЧЕСКИЕ СТОЛБЦЫ: BASE + АККАУНТЫ + TAIL
+        all_columns = self.BASE_COLUMNS + self._account_columns + self.TAIL_COLUMNS
+        
+        # Таблица с динамическими столбцами
+        self.table = QtWidgets.QTableWidget(0, len(all_columns))
+        self.table.setHorizontalHeaderLabels(all_columns)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
         self.table.setAlternatingRowColors(True)
@@ -242,24 +257,40 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         
         # Настройка отображения текста
-        self.table.setTextElideMode(QtCore.Qt.ElideRight)  # Обрезка "..." справа
-        self.table.setWordWrap(False)  # Без переносов - стабильная высота строк
+        self.table.setTextElideMode(QtCore.Qt.ElideRight)
+        self.table.setWordWrap(False)
         
         header = self.table.horizontalHeader()
-        header.setStretchLastSection(True)
         
-        # Автоподгон для колонок "Proxy" и "Используется" (WCAG рекомендация)
-        COL_PROXY = 1
-        COL_USED = 6
-        header.setSectionResizeMode(COL_PROXY, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(COL_USED, QtWidgets.QHeaderView.ResizeToContents)
+        # Настройка ширины столбцов
+        # BASE: ID, Proxy, Тип, Логин, Статус, Пинг
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)  # ID
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Proxy
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # Тип
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # Логин
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Interactive)  # Статус
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Interactive)  # Пинг
         
-        # Остальные колонки - Interactive (пользователь может растянуть вручную)
-        for i in [0, 2, 3, 4, 5, 7, 8]:
-            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
+        # АККАУНТЫ: автоширина по содержимому (✓ или пусто)
+        base_col_count = len(self.BASE_COLUMNS)
+        for i in range(len(self._account_columns)):
+            col_idx = base_col_count + i
+            header.setSectionResizeMode(col_idx, QtWidgets.QHeaderView.ResizeToContents)
         
-        # Добавляем только основную таблицу прокси (БЕЗ правой таблицы Аккаунты)
+        # TAIL: Ошибка (последняя - растягивается)
+        tail_start = base_col_count + len(self._account_columns)
+        for i in range(len(self.TAIL_COLUMNS) - 1):
+            header.setSectionResizeMode(tail_start + i, QtWidgets.QHeaderView.Interactive)
+        
+        header.setStretchLastSection(True)  # Последняя колонка растягивается
+        
+        # Добавляем таблицу
         layout.addWidget(self.table)
+        
+        # ВАЖНО: Скрываем колонку "Логин" (как в файле 43 - не показываем логины прокси)
+        # Логин доступен в tooltip при наведении на Proxy
+        self.table.setColumnHidden(3, True)
+        
         # Подключаем сигналы
         self.btn_paste.clicked.connect(self._on_paste)
         self.btn_load_file.clicked.connect(self._on_load_file)
@@ -283,79 +314,92 @@ class ProxyManagerDialog(QtWidgets.QDialog):
     def _load_accounts_map(self):
         """Загружает привязку прокси к аккаунтам"""
         self._accounts_map = {}
-        self._accounts_list = []
+        
+        # Обновляем список аккаунтов
         accounts = account_service.list_accounts()
+        self._accounts_list = [acc for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
         
-        for acc in accounts:
-            if acc.name not in ["demo_account", "wordstat_main"]:
-                self._accounts_list.append(acc)
-                
-                if acc.proxy:
-                    if acc.proxy not in self._accounts_map:
-                        self._accounts_map[acc.proxy] = []
-                    self._accounts_map[acc.proxy].append(acc.name)
+        for acc in self._accounts_list:
+            if acc.proxy:
+                if acc.proxy not in self._accounts_map:
+                    self._accounts_map[acc.proxy] = []
+                self._accounts_map[acc.proxy].append(acc.name)
         
-        # Обновляем таблицы ОДИН РАЗ после загрузки всего (прокси + привязка + аккаунты)
+        # Обновляем таблицу
         self._refresh_table()
-        # self._refresh_accounts_table()  # Отключено
     
     def _refresh_table(self):
-        """Обновляет таблицу"""
+        """Обновляет таблицу с динамическими столбцами аккаунтов"""
         self.table.setRowCount(len(self._proxies))
         
+        base_col_count = len(self.BASE_COLUMNS)
+        account_col_count = len(self._account_columns)
+        
         for row, px in enumerate(self._proxies):
-            self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(px['id'])))
+            # BASE COLUMNS
+            col = 0
             
-            # Proxy с тултипом (полный текст)
+            # ID
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(px['id'])))
+            col += 1
+            
+            # Proxy с тултипом
             proxy_item = QtWidgets.QTableWidgetItem(px['raw'])
-            proxy_item.setToolTip(px['raw'])  # Полный прокси в тултипе
-            self.table.setItem(row, 1, proxy_item)
+            proxy_item.setToolTip(px['raw'])
+            self.table.setItem(row, col, proxy_item)
+            col += 1
             
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(px['scheme'].upper()))
-            self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(px['login'] or ""))
+            # Тип
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(px['scheme'].upper()))
+            col += 1
             
+            # Логин
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(px['login'] or ""))
+            col += 1
+            
+            # Статус
             status = px['last_status'] or "WAIT"
             status_item = QtWidgets.QTableWidgetItem(status)
             status_item.setTextAlignment(QtCore.Qt.AlignCenter)
             
-            # Цвет ТОЛЬКО текста (как в остальном софте - темная тема)
             if status == "OK":
-                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#4CAF50")))  # Зеленый текст
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#4CAF50")))
             elif status in ("FAIL", "TIMEOUT", "ERR"):
-                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#F44336")))  # Красный текст
+                status_item.setForeground(QtGui.QBrush(QtGui.QColor("#F44336")))
             
-            self.table.setItem(row, 4, status_item)
-            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(str(px['latency_ms'] or "")))
+            self.table.setItem(row, col, status_item)
+            col += 1
             
-            # Колонка "Используется" - СЧЁТЧИК вместо списка (как в Кей-Коллекторе)
+            # Пинг
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(px['latency_ms'] or "")))
+            col += 1
+            
+            # ДИНАМИЧЕСКИЕ СТОЛБЦЫ АККАУНТОВ (✓ если назначен)
             accounts_using = self._accounts_map.get(px['raw'], [])
             
-            # Показываем только СЧЁТЧИК "Использовано: N"
-            if accounts_using:
-                count_text = f"Использовано: {len(accounts_using)}"
-            else:
-                count_text = ""
+            for acc_name in self._account_columns:
+                check_item = QtWidgets.QTableWidgetItem()
+                check_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                
+                if acc_name in accounts_using:
+                    check_item.setText("✓")
+                    check_item.setForeground(QtGui.QBrush(QtGui.QColor("#4CAF50")))  # Зеленая галочка
+                else:
+                    check_item.setText("")
+                
+                check_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                self.table.setItem(row, col, check_item)
+                col += 1
             
-            used_item = QtWidgets.QTableWidgetItem(count_text)
-            used_item.setTextAlignment(QtCore.Qt.AlignCenter)
-            
-            # Tooltip с ПОЛНЫМ списком аккаунтов
-            if accounts_using:
-                full_accounts = "\n".join(accounts_using)
-                used_item.setToolTip(f"Используется в аккаунтах:\n{full_accounts}")
-            
-            # Запрет редактирования
-            used_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-            
-            self.table.setItem(row, 6, used_item)
-            
-            self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(px['last_error'] or ""))
+            # TAIL COLUMNS: Ошибка, Проверено
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(px['last_error'] or ""))
+            col += 1
             
             checked_at = ""
             if px['last_check']:
                 checked_at = px['last_check'].strftime("%Y-%m-%d %H:%M:%S") if isinstance(px['last_check'], datetime) else str(px['last_check'])
             
-            self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(checked_at))
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(checked_at))
         
         self._update_stats()
     
