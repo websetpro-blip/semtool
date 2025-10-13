@@ -187,6 +187,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         self.btn_check_all = QtWidgets.QPushButton("✅ Проверить все")
         self.btn_stop = QtWidgets.QPushButton("⛔ Остановить")
         self.btn_apply = QtWidgets.QPushButton("💾 Применить к аккаунтам")
+        self.btn_auto_distribute = QtWidgets.QPushButton("⚡ Автораспределение")
         self.btn_export = QtWidgets.QPushButton("📤 Экспорт OK")
         self.btn_clear = QtWidgets.QPushButton("🗑 Очистить")
         self.btn_close = QtWidgets.QPushButton("❌ Закрыть")
@@ -199,6 +200,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         buttons_layout.addWidget(self.btn_check_all)
         buttons_layout.addWidget(self.btn_stop)
         buttons_layout.addWidget(self.btn_apply)
+        buttons_layout.addWidget(self.btn_auto_distribute)
         buttons_layout.addWidget(self.btn_export)
         buttons_layout.addWidget(self.btn_clear)
         buttons_layout.addStretch()
@@ -262,6 +264,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         self.btn_check_all.clicked.connect(self._on_check_all)
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_apply.clicked.connect(self._on_apply_to_accounts)
+        self.btn_auto_distribute.clicked.connect(self._on_auto_distribute)
         self.btn_export.clicked.connect(self._on_export)
         self.btn_clear.clicked.connect(self._on_clear)
         self.btn_close.clicked.connect(self.close)
@@ -524,6 +527,62 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 "Применено",
                 f"Прокси применены к {updated} аккаунтам"
             )
+    
+    def _on_auto_distribute(self):
+        """Автоматическое распределение OK прокси по всем аккаунтам"""
+        # Получаем только рабочие прокси
+        ok_proxies = [px for px in self._proxies if px.get('last_status') == 'OK']
+        
+        if not ok_proxies:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Нет рабочих прокси",
+                "Сначала проверьте прокси. Автораспределение работает только с прокси со статусом OK."
+            )
+            return
+        
+        # Получаем все аккаунты (кроме demo и wordstat_main)
+        accounts = account_service.list_accounts()
+        target_accounts = [acc for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
+        
+        if not target_accounts:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Нет аккаунтов",
+                "Не найдено аккаунтов для распределения прокси"
+            )
+            return
+        
+        # Подтверждение
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Автораспределение прокси",
+            f"Распределить {len(ok_proxies)} рабочих прокси по {len(target_accounts)} аккаунтам?\n\n"
+            f"Прокси будут назначены по кругу (round-robin).",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        
+        # Распределяем по кругу (round-robin)
+        updated = 0
+        for i, acc in enumerate(target_accounts):
+            proxy = ok_proxies[i % len(ok_proxies)]
+            account_service.update_account_proxy(acc.name, proxy['raw'])
+            updated += 1
+        
+        # Обновляем привязку и таблицу
+        self._load_accounts_map()
+        
+        QtWidgets.QMessageBox.information(
+            self,
+            "Автораспределение завершено",
+            f"✅ Прокси распределены по {updated} аккаунтам\n\n"
+            f"Рабочих прокси: {len(ok_proxies)}\n"
+            f"Аккаунтов: {len(target_accounts)}\n"
+            f"Метод: round-robin (по кругу)"
+        )
     
     def _on_export(self):
         """Экспорт рабочих прокси"""
