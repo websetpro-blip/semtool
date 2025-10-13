@@ -79,19 +79,22 @@ QTabBar::tab:hover:!selected {
     color: #FFB300;
 }
 
-/* === КНОПКИ (Buttons) === */
+/* === КНОПКИ (Buttons) - размеры из файла 44 === */
+/* Button M (средняя): 40px высота, 12x8px padding, 20x20 иконки */
 QPushButton {
     background-color: #FFB300;
-    color: #FFFFFF;
-    border: none;
-    border-radius: 10px;
-    padding: 10px 16px;
+    color: #151515;  /* Темный текст на светлом фоне - файл 44 */
+    border: 1px solid #E39E00;
+    border-radius: 8px;  /* 8px по спецификации файл 44 */
+    padding: 0 12px;  /* Горизонтальные 12px - файл 44 */
     font-weight: 600;
-    min-height: 36px;
+    min-height: 40px;  /* Button M = 40px - файл 44 */
+    max-height: 40px;
 }
 
 QPushButton:hover {
     background-color: #E39E00;
+    border-color: #FFB300;
 }
 
 QPushButton:pressed {
@@ -101,33 +104,47 @@ QPushButton:pressed {
 QPushButton:disabled {
     background-color: #F1F5F9;
     color: #94A3B8;
+    opacity: 0.5;
 }
 
-/* Вторичные кнопки */
+/* Button S (маленькая): 32px высота - файл 44 */
+QPushButton[size="small"] {
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0 10px;
+    font-size: 13px;
+}
+
+/* Вторичные кнопки (не primary) */
 QPushButton[flat="true"] {
-    background-color: #F7F8FA;
+    background-color: #FFFFFF;
     color: #475569;
-    border: 1px solid #E5E7EB;
+    border: 1px solid #E8E9EC;
 }
 
 QPushButton[flat="true"]:hover {
-    background-color: #FFF4EC;
-    color: #FFB300;
+    background-color: #FFFFFF;
+    color: #1F1F1F;
     border-color: #FFB300;
 }
 
-/* === TOOL BUTTONS === */
+/* === TOOL BUTTONS (IconButton в toolbar) === */
+/* IconButton: 36px × 36px, 24x24 иконки - файл 44 */
 QToolButton {
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     border-radius: 8px;
-    padding: 8px 12px;
+    padding: 6px;  /* 6px вокруг иконки - файл 44 */
     color: #475569;
+    min-width: 36px;
+    min-height: 36px;
+    max-width: 36px;
+    max-height: 36px;
 }
 
 QToolButton:hover {
-    background: #FFF4EC;
-    color: #FFB300;
+    background: #FFFFFF;
+    border-color: #FFB300;
 }
 
 QToolButton:checked {
@@ -140,24 +157,41 @@ QToolButton:pressed {
     background: #FFD6B8;
 }
 
-/* === ПОЛЯ ВВОДА === */
-QLineEdit, QTextEdit, QPlainTextEdit {
+/* === ПОЛЯ ВВОДА - размеры из файла 44 === */
+/* Input: 40px высота, 12x8px padding, border-radius 8px */
+QLineEdit {
     background-color: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 10px;
-    padding: 8px 12px;
-    color: #0F172A;
+    border: 1px solid #E8E9EC;
+    border-radius: 8px;
+    padding: 0 12px;
+    color: #1F1F1F;
     selection-background-color: #FFF4EC;
-    selection-color: #0F172A;
+    selection-color: #1F1F1F;
+    min-height: 40px;
+    max-height: 40px;
+}
+
+QTextEdit, QPlainTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #E8E9EC;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #1F1F1F;
+    selection-background-color: #FFF4EC;
+    selection-color: #1F1F1F;
 }
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
-    border: 2px solid #FFB300;
-    background-color: #FFFBF7;
+    border: 1px solid #FFB300;
+    background-color: #FFFFFF;
+}
+
+QLineEdit::placeholder {
+    color: #8D8E90;  /* --ya-muted из файла 44 */
 }
 
 QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {
-    background-color: #F7F8FA;
+    background-color: #F6F7F9;
     color: #94A3B8;
     border-color: #E5E7EB;
 }
@@ -461,25 +495,33 @@ QMenu::separator {
 }
 
 /* === TOOLBAR === */
+/* === TOOLBAR - размеры из файла 44 === */
+/* Toolbar: 48px высота, 12px padding, 24x24 иконки */
 QToolBar {
     background: #FFFFFF;
     border: none;
-    border-bottom: 1px solid #E5E7EB;
+    border-bottom: 1px solid #E8E9EC;
     spacing: 8px;
-    padding: 8px;
+    padding: 0 12px;
+    min-height: 48px;
+    max-height: 48px;
 }
 
 QToolBar::separator {
-    background: #E5E7EB;
+    background: #E8E9EC;
     width: 1px;
-    margin: 4px 8px;
+    margin: 0 8px;
 }
 
-/* === STATUS BAR === */
+/* === STATUSBAR - размеры из файла 44 === */
+/* StatusBar: 44px высота, 12px padding, 20x20 иконки */
 QStatusBar {
-    background: #F7F8FA;
+    background: #FFFFFF;
     color: #475569;
-    border-top: 1px solid #E5E7EB;
+    border-top: 1px solid #E8E9EC;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0 12px;
 }
 
 /* === LABEL === */
