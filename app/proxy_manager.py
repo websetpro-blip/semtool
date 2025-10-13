@@ -156,6 +156,14 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         self._create_ui()
         self._load_from_store()
+        
+        # Если ProxyStore пустой - автоматически синхронизируем с аккаунтами
+        if not self._proxies:
+            added = proxy_store.sync_from_accounts()
+            if added > 0:
+                self._load_from_store()
+                print(f"[Proxy Manager] Автоматически синхронизировано {added} прокси из аккаунтов")
+        
         self._load_accounts_map()  # Загружаем привязку к аккаунтам
     
     def _create_ui(self):
