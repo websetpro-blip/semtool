@@ -1,16 +1,19 @@
-/* ===== SemTool Orange Light Theme ===== */
-/* Вдохновлено Behance Dialin AI + Яндекс.Директ акцент */
-/* Дизайн-система: чистые карточки, просторные отступы, современный SaaS-UI */
+/* ===== SemTool Orange Light Theme (Yandex Design System) ===== */
+/* Основано на yandex-icon-pack-v1 + файл 44 */
+/* Приглушенный амбер #FFB300 вместо яркого оранжевого */
 
-/* === БАЗОВЫЕ ПЕРЕМЕННЫЕ (через комментарии, т.к. QSS не поддерживает CSS variables) === */
-/* --brand-500: #FF7A00 (Primary Orange) */
-/* --brand-600: #F26600 (Hover) */
-/* --brand-700: #D95500 (Active) */
-/* --bg: #FFFFFF */
-/* --bg-subtle: #F7F8FA */
-/* --txt-900: #0F172A */
-/* --txt-600: #475569 */
-/* --bd-200: #E5E7EB */
+/* === ДИЗАЙН-ТОКЕНЫ ЯНДЕКС === */
+/* --ya-primary: #FFB300 (приглушённый амбер - акцент) */
+/* --ya-accent: #FF3D00 (запасной акцент, редко) */
+/* --ya-graphite: #1F1F1F (текст/иконки по умолчанию) */
+/* --ya-muted: #8D8E90 (вторичный текст/иконки) */
+/* --bg: #FFFFFF (фон) */
+/* --bg-soft: #F6F7F9 (мягкие панели/журнал) */
+/* --line: #E8E9EC (границы) */
+/* --focus: #1A73E8 (фокус-обводка) */
+/* --ok: #1E8E3E (успех) */
+/* --warn: #B26A00 (предупреждение) */
+/* --err: #D93025 (ошибка) */
 
 /* === ГЛОБАЛЬНЫЕ СТИЛИ === */
 * {
@@ -46,7 +49,7 @@ QGroupBox::title {
 /* === ВКЛАДКИ (Tabs) === */
 QTabWidget::pane {
     border: none;
-    border-top: 2px solid #FF7A00;
+    border-top: 2px solid #FFB300;
     background: #FFFFFF;
     border-radius: 0;
 }
@@ -66,19 +69,19 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #FFFFFF;
     color: #0F172A;
-    border-color: #FF7A00;
+    border-color: #FFB300;
     border-bottom: 2px solid #FFFFFF;
     font-weight: 600;
 }
 
 QTabBar::tab:hover:!selected {
     background: #FFF4EC;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 /* === КНОПКИ (Buttons) === */
 QPushButton {
-    background-color: #FF7A00;
+    background-color: #FFB300;
     color: #FFFFFF;
     border: none;
     border-radius: 10px;
@@ -88,11 +91,11 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #F26600;
+    background-color: #E39E00;
 }
 
 QPushButton:pressed {
-    background-color: #D95500;
+    background-color: #FFC233;
 }
 
 QPushButton:disabled {
@@ -109,8 +112,8 @@ QPushButton[flat="true"] {
 
 QPushButton[flat="true"]:hover {
     background-color: #FFF4EC;
-    color: #FF7A00;
-    border-color: #FF7A00;
+    color: #FFB300;
+    border-color: #FFB300;
 }
 
 /* === TOOL BUTTONS === */
@@ -124,13 +127,13 @@ QToolButton {
 
 QToolButton:hover {
     background: #FFF4EC;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 QToolButton:checked {
     background: #FFE7D6;
-    border: 1px solid #FF7A00;
-    color: #FF7A00;
+    border: 1px solid #FFB300;
+    color: #FFB300;
 }
 
 QToolButton:pressed {
@@ -149,7 +152,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {
 }
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
-    border: 2px solid #FF7A00;
+    border: 2px solid #FFB300;
     background-color: #FFFBF7;
 }
 
@@ -170,11 +173,11 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #FF7A00;
+    border-color: #FFB300;
 }
 
 QComboBox:focus {
-    border: 2px solid #FF7A00;
+    border: 2px solid #FFB300;
 }
 
 QComboBox::drop-down {
@@ -210,7 +213,7 @@ QSpinBox, QDoubleSpinBox {
 }
 
 QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 2px solid #FF7A00;
+    border: 2px solid #FFB300;
 }
 
 QSpinBox::up-button, QDoubleSpinBox::up-button,
@@ -275,7 +278,7 @@ QHeaderView::section:last {
 
 QHeaderView::section:hover {
     background-color: #FFF4EC;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 /* === СКРОЛЛБАРЫ === */
@@ -338,7 +341,7 @@ QSplitter::handle:horizontal {
 }
 
 QSplitter::handle:hover {
-    background-color: #FF7A00;
+    background-color: #FFB300;
 }
 
 /* === CHECKBOX === */
@@ -356,17 +359,17 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:hover {
-    border-color: #FF7A00;
+    border-color: #FFB300;
 }
 
 QCheckBox::indicator:checked {
-    background-color: #FF7A00;
-    border-color: #FF7A00;
+    background-color: #FFB300;
+    border-color: #FFB300;
     image: none;
 }
 
 QCheckBox::indicator:checked:hover {
-    background-color: #F26600;
+    background-color: #E39E00;
 }
 
 /* === RADIO BUTTON === */
@@ -384,12 +387,12 @@ QRadioButton::indicator {
 }
 
 QRadioButton::indicator:hover {
-    border-color: #FF7A00;
+    border-color: #FFB300;
 }
 
 QRadioButton::indicator:checked {
     background-color: #FFFFFF;
-    border: 6px solid #FF7A00;
+    border: 6px solid #FFB300;
 }
 
 /* === PROGRESS BAR === */
@@ -404,7 +407,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #FF7A00;
+    background-color: #FFB300;
     border-radius: 9px;
 }
 
@@ -424,7 +427,7 @@ QMenuBar::item {
 
 QMenuBar::item:selected {
     background-color: #FFF4EC;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 QMenuBar::item:pressed {
@@ -448,7 +451,7 @@ QMenu::item {
 
 QMenu::item:selected {
     background-color: #FFF4EC;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 QMenu::separator {

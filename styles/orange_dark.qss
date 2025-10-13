@@ -35,7 +35,7 @@ QGroupBox::title {
 /* === ВКЛАДКИ === */
 QTabWidget::pane {
     border: none;
-    border-top: 2px solid #FF7A00;
+    border-top: 2px solid #FFB300;
     background: #2b2b2b;
 }
 
@@ -54,18 +54,18 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #2b2b2b;
     color: #e0e0e0;
-    border-color: #FF7A00;
+    border-color: #FFB300;
     font-weight: 600;
 }
 
 QTabBar::tab:hover:!selected {
     background: #3a2a1a;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 /* === КНОПКИ === */
 QPushButton {
-    background-color: #FF7A00;
+    background-color: #FFB300;
     color: #FFFFFF;
     border: none;
     border-radius: 10px;
@@ -75,11 +75,11 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #F26600;
+    background-color: #E39E00;
 }
 
 QPushButton:pressed {
-    background-color: #D95500;
+    background-color: #FFC233;
 }
 
 QPushButton:disabled {
@@ -95,8 +95,8 @@ QPushButton[flat="true"] {
 
 QPushButton[flat="true"]:hover {
     background-color: #3a2a1a;
-    color: #FF7A00;
-    border-color: #FF7A00;
+    color: #FFB300;
+    border-color: #FFB300;
 }
 
 /* === TOOL BUTTONS === */
@@ -110,13 +110,13 @@ QToolButton {
 
 QToolButton:hover {
     background: #3a2a1a;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 QToolButton:checked {
     background: #4a3020;
-    border: 1px solid #FF7A00;
-    color: #FF7A00;
+    border: 1px solid #FFB300;
+    color: #FFB300;
 }
 
 /* === ПОЛЯ ВВОДА === */
@@ -131,7 +131,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {
 }
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
-    border: 2px solid #FF7A00;
+    border: 2px solid #FFB300;
     background-color: #2a2520;
 }
 
@@ -151,11 +151,11 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #FF7A00;
+    border-color: #FFB300;
 }
 
 QComboBox:focus {
-    border: 2px solid #FF7A00;
+    border: 2px solid #FFB300;
 }
 
 QComboBox::drop-down {
@@ -190,7 +190,7 @@ QSpinBox, QDoubleSpinBox {
 }
 
 QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 2px solid #FF7A00;
+    border: 2px solid #FFB300;
 }
 
 /* === ТАБЛИЦЫ === */
@@ -222,7 +222,7 @@ QHeaderView::section {
 
 QHeaderView::section:hover {
     background-color: #3a2a1a;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 /* === СКРОЛЛБАРЫ === */
@@ -265,7 +265,7 @@ QSplitter::handle {
 }
 
 QSplitter::handle:hover {
-    background-color: #FF7A00;
+    background-color: #FFB300;
 }
 
 /* === CHECKBOX === */
@@ -283,12 +283,12 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:hover {
-    border-color: #FF7A00;
+    border-color: #FFB300;
 }
 
 QCheckBox::indicator:checked {
-    background-color: #FF7A00;
-    border-color: #FF7A00;
+    background-color: #FFB300;
+    border-color: #FFB300;
 }
 
 /* === PROGRESS BAR === */
@@ -303,7 +303,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #FF7A00;
+    background-color: #FFB300;
     border-radius: 9px;
 }
 
@@ -316,7 +316,7 @@ QMenuBar {
 
 QMenuBar::item:selected {
     background-color: #3a2a1a;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 /* === MENU === */
@@ -330,7 +330,7 @@ QMenu {
 
 QMenu::item:selected {
     background-color: #4a3020;
-    color: #FF7A00;
+    color: #FFB300;
 }
 
 QMenu::separator {
