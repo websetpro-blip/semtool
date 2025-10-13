@@ -229,10 +229,22 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
         self.table.setAlternatingRowColors(True)
         
+        # Настройка отображения текста
+        self.table.setTextElideMode(QtCore.Qt.ElideRight)  # Обрезка "..." справа
+        self.table.setWordWrap(False)  # Без переносов - стабильная высота строк
+        
         header = self.table.horizontalHeader()
         header.setStretchLastSection(True)
-        for i in [1, 6, 7]:  # Proxy, Используется, Ошибка
-            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Stretch)
+        
+        # Автоподгон для колонок "Proxy" и "Используется" (WCAG рекомендация)
+        COL_PROXY = 1
+        COL_USED = 6
+        header.setSectionResizeMode(COL_PROXY, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(COL_USED, QtWidgets.QHeaderView.ResizeToContents)
+        
+        # Остальные колонки - Interactive (пользователь может растянуть вручную)
+        for i in [0, 2, 3, 4, 5, 7, 8]:
+            header.setSectionResizeMode(i, QtWidgets.QHeaderView.Interactive)
         
         layout.addWidget(self.table)
         
@@ -271,7 +283,12 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         for row, px in enumerate(self._proxies):
             self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(px['id'])))
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(px['raw']))
+            
+            # Proxy с тултипом (полный текст)
+            proxy_item = QtWidgets.QTableWidgetItem(px['raw'])
+            proxy_item.setToolTip(px['raw'])  # Полный прокси в тултипе
+            self.table.setItem(row, 1, proxy_item)
+            
             self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(px['scheme'].upper()))
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(px['login'] or ""))
             
@@ -292,8 +309,16 @@ class ProxyManagerDialog(QtWidgets.QDialog):
             accounts_using = self._accounts_map.get(px['raw'], [])
             accounts_str = ", ".join(accounts_using) if accounts_using else ""
             used_item = QtWidgets.QTableWidgetItem(accounts_str)
+            
             if accounts_using:
-                used_item.setBackground(QtGui.QColor("#fff3cd"))  # Желтый фон если используется
+                # WCAG контраст 4.5:1 - темный текст на светло-желтом фоне
+                used_item.setForeground(QtGui.QBrush(QtGui.QColor("#111")))  # Темный текст
+                used_item.setBackground(QtGui.QBrush(QtGui.QColor("#FFE8A3")))  # Мягкий желтый
+                
+                # Tooltip с полным списком аккаунтов (на случай длинной строки)
+                full_accounts = "\n".join(accounts_using)
+                used_item.setToolTip(f"Используется в аккаунтах:\n{full_accounts}")
+            
             self.table.setItem(row, 6, used_item)
             
             self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(px['last_error'] or ""))
