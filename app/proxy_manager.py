@@ -164,7 +164,8 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 self._load_from_store()
                 print(f"[Proxy Manager] Автоматически синхронизировано {added} прокси из аккаунтов")
         
-        self._load_accounts_map()  # Загружаем привязку к аккаунтам
+        # ВАЖНО: загружаем привязку и обновляем таблицу ПОСЛЕ загрузки прокси
+        self._load_accounts_map()
     
     def _create_ui(self):
         """Создает интерфейс"""
@@ -261,6 +262,9 @@ class ProxyManagerDialog(QtWidgets.QDialog):
                 if acc.proxy not in self._accounts_map:
                     self._accounts_map[acc.proxy] = []
                 self._accounts_map[acc.proxy].append(acc.name)
+        
+        print(f"[Proxy Manager] Загружена привязка для {len(self._accounts_map)} прокси")
+        print(f"[Proxy Manager] Пример привязки: {list(self._accounts_map.items())[:1]}")
         
         # Обновляем таблицу после загрузки
         self._refresh_table()
