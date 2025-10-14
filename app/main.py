@@ -1504,29 +1504,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QPlainTextEdit, QToolBar, QTextEdit
         from PySide6.QtGui import QFont, QAction
         
-        # БЛОК STATUS AND ACTIVITY (как на скриншоте - файл 43)
-        self.status_label = QLabel("Готов к работе")
-        self.status_label.setStyleSheet("""
-            font-size: 14px;
-            font-weight: 600;
-            color: #222;  /* --text Beige-Gold */
-            padding: 4px 0;
-        """)
-        
-        self.status_block = QLabel("[--:--:--] Ожидание...")
-        self.status_block.setStyleSheet("""
-            QLabel {
-                background: #FAF7F2;  /* --soft Beige-Gold */
-                color: #C9A858;  /* --gold-500 */
-                border: 1px solid #E6D9C2;  /* --panel-border */
-                border-radius: 6px;  /* --r-sm квадратнее! */
-                padding: 12px 16px;
-                font-family: "JetBrains Mono", "Consolas", monospace;
-                font-size: 13px;
-                font-weight: 500;
-            }
-        """)
-        
+        # ЕДИНЫЙ ЖУРНАЛ ЛОГОВ (файл 45 - объединяем все в один блок)
         # Используем QTextEdit для подсветки логов (файл 44)
         self.log_widget = QTextEdit()  # QTextEdit поддерживает HTML для подсветки
         self.log_widget.setReadOnly(True)
@@ -1555,24 +1533,21 @@ class MainWindow(QMainWindow):
         self.pause_log_action.setCheckable(True)
         log_toolbar.addAction(self.pause_log_action)
         
-        # Виджет журнала с кнопками + Status блок (файл 43)
+        # ЕДИНЫЙ контейнер с журналом (файл 45 - убрали дублирование)
         log_container = QWidget()
         log_layout = QVBoxLayout(log_container)
         log_layout.setContentsMargins(8, 8, 8, 8)
         log_layout.setSpacing(8)
         
         # Заголовок секции
-        section_title = QLabel("Status and Activity")
-        section_title.setStyleSheet("font-size: 12px; color: #8B8E93; font-weight: 600;")  # --text-muted Beige-Gold
+        section_title = QLabel("📋 Журнал активности")
+        section_title.setStyleSheet("font-size: 14px; color: #1F2937; font-weight: 600;")
         log_layout.addWidget(section_title)
         
-        # Status блок
-        log_layout.addWidget(self.status_label)
-        log_layout.addWidget(self.status_block)
-        
-        # Журнал задач
-        log_layout.addWidget(QLabel("📋 Журнал задач"))
+        # Панель кнопок
         log_layout.addWidget(log_toolbar)
+        
+        # ОДИН журнал логов с прокруткой
         log_layout.addWidget(self.log_widget)
         
         self.results_tab = FrequencyResultsTab()
@@ -1679,10 +1654,8 @@ class MainWindow(QMainWindow):
                 f.write(self.log_widget.toPlainText())
     
     def update_status(self, message: str):
-        """Обновить статус в оранжевом блоке (файл 43)"""
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.status_block.setText(f"[{timestamp}] {message}")
+        """Обновить статус в журнале (файл 45 - единый журнал)"""
+        self.log_message(message, "INFO")
     
     def log_message(self, message: str, level: str = "INFO"):
         """

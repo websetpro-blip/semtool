@@ -92,7 +92,7 @@ QPushButton {
     color: #1F2937;
     border: 1px solid #E8E1CF;
     border-radius: 6px;  /* ПРАВИЛЬНО: 6px базовый */
-    padding: 0 16px;  /* 16px = --s-4 */
+    padding: 0 12px;  /* УМЕНЬШЕНО: было 16px → 12px (компактнее) */
     font-weight: 500;
     min-height: 32px;  /* ИСПРАВЛЕНО: базовая высота 32px (файл 45) */
 }
