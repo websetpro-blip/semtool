@@ -141,7 +141,7 @@ class KeysPanel(QWidget):
         self.groups_tree.clear()
         
         # Добавляем "Корзина (0)" первой (как в Key Collector)
-        trash_item = QTreeWidgetItem([f"Корзина (0 🔴 0)"])
+        trash_item = QTreeWidgetItem([f"Корзина (0 / 0)"])
         trash_item.setForeground(0, QColor("#999"))  # Серый цвет
         self.groups_tree.addTopLevelItem(trash_item)
         
@@ -156,11 +156,11 @@ class KeysPanel(QWidget):
             
             phrase_count = len(phrases)
             
-            # TODO: Вторая цифра - сумма частотности? Пока заглушка
-            freq_sum = phrase_count * 100  # Заглушка
+            # TODO: Вторая цифра - суммарная частотность WS? Пока 0
+            freq_sum = 0  # Нужно суммировать freq_total из фраз
             
-            # Корневой элемент: "название (фраз 🔴 частотность)"
-            root_item = QTreeWidgetItem([f"{name} ({phrase_count} 🔴 {freq_sum})"])
+            # Корневой элемент: "название (фраз / частотность)" - КАК В KEY COLLECTOR
+            root_item = QTreeWidgetItem([f"{name} ({phrase_count} / {freq_sum})"])
             root_item.setExpanded(False)
             
             # Добавляем фразы как дочерние элементы
