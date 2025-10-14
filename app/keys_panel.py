@@ -1,19 +1,21 @@
 """
 Правая панель с ключевыми фразами (как в Key Collector)
 Отображает результаты парсинга во всю высоту справа от вкладок
+Вкладки: Ключи и Группы (файл 45)
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
     QLineEdit, QLabel, QHeaderView, QHBoxLayout, QPushButton,
-    QComboBox, QAbstractItemView
+    QComboBox, QAbstractItemView, QTabWidget, QTreeWidget,
+    QTreeWidgetItem, QMenu, QInputDialog
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtGui import QColor, QAction, QStandardItemModel, QStandardItem
 
 
 class KeysPanel(QWidget):
-    """Правая панель с ключами во всю высоту"""
+    """Правая панель с ключами во всю высоту (как в Key Collector - файл 45)"""
     
     # Сигналы
     phrase_selected = Signal(str)  # Фраза выбрана
@@ -27,18 +29,28 @@ class KeysPanel(QWidget):
         # Данные
         self._all_data = []  # Все фразы
         self._filtered_data = []  # Отфильтрованные фразы
+        self._groups = {}  # Группы: {group_name: [phrases]}
         
         self.setup_ui()
     
     def setup_ui(self):
-        """Создание интерфейса"""
+        """Создание интерфейса (как в Key Collector - файл 45)"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         
-        # Заголовок
+        # ВКЛАДКИ: Ключи и Группы (файл 45)
+        self.tabs = QTabWidget()
+        self.tabs.setMovable(False)
+        
+        # === ВКЛАДКА "КЛЮЧИ" ===
+        keys_widget = QWidget()
+        keys_layout = QVBoxLayout(keys_widget)
+        keys_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Заголовок на вкладке Ключи
         header_layout = QHBoxLayout()
         title = QLabel("Ключевые фразы")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        title.setStyleSheet("font-weight: bold;")
         header_layout.addWidget(title)
         
         self.count_label = QLabel("0 фраз")
@@ -46,7 +58,7 @@ class KeysPanel(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(self.count_label)
         
-        layout.addLayout(header_layout)
+        keys_layout.addLayout(header_layout)
         
         # Панель фильтров
         filter_layout = QHBoxLayout()
@@ -70,7 +82,7 @@ class KeysPanel(QWidget):
         clear_btn.clicked.connect(self._clear_filters)
         filter_layout.addWidget(clear_btn)
         
-        layout.addLayout(filter_layout)
+        keys_layout.addLayout(filter_layout)
         
         # Таблица с фразами
         self.table = QTableWidget(0, 6)
@@ -116,7 +128,7 @@ class KeysPanel(QWidget):
         # Двойной клик на фразе
         self.table.cellDoubleClicked.connect(self._on_phrase_double_click)
         
-        layout.addWidget(self.table, 1)
+        keys_layout.addWidget(self.table, 1)
         
         # Панель действий
         actions_layout = QHBoxLayout()
@@ -139,7 +151,63 @@ class KeysPanel(QWidget):
         
         actions_layout.addStretch()
         
-        layout.addLayout(actions_layout)
+        keys_layout.addLayout(actions_layout)
+        
+        # === ВКЛАДКА "ГРУППЫ" (файл 45) ===
+        groups_widget = QWidget()
+        groups_layout = QVBoxLayout(groups_widget)
+        groups_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Заголовок
+        groups_header = QHBoxLayout()
+        groups_title = QLabel("Группы")
+        groups_title.setStyleSheet("font-weight: bold;")
+        groups_header.addWidget(groups_title)
+        
+        self.groups_count_label = QLabel("0 групп")
+        self.groups_count_label.setStyleSheet("color: gray;")
+        groups_header.addStretch()
+        groups_header.addWidget(self.groups_count_label)
+        
+        groups_layout.addLayout(groups_header)
+        
+        # Дерево групп (иерархия)
+        self.groups_tree = QTreeWidget()
+        self.groups_tree.setHeaderLabels(["Группа / Фраза", "Фраз"])
+        self.groups_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.groups_tree.customContextMenuRequested.connect(self._groups_context_menu)
+        self.groups_tree.setAlternatingRowColors(True)
+        self.groups_tree.setAnimated(True)
+        
+        groups_layout.addWidget(self.groups_tree, 1)
+        
+        # Кнопки управления группами
+        groups_actions = QHBoxLayout()
+        
+        create_group_btn = QPushButton("➕ Создать")
+        create_group_btn.setToolTip("Создать новую группу")
+        create_group_btn.clicked.connect(self._create_group_in_tree)
+        groups_actions.addWidget(create_group_btn)
+        
+        rename_group_btn = QPushButton("✏️ Переименовать")
+        rename_group_btn.setToolTip("Переименовать группу")
+        rename_group_btn.clicked.connect(self._rename_group)
+        groups_actions.addWidget(rename_group_btn)
+        
+        delete_group_btn = QPushButton("🗑️ Удалить")
+        delete_group_btn.setToolTip("Удалить группу")
+        delete_group_btn.clicked.connect(self._delete_group_from_tree)
+        groups_actions.addWidget(delete_group_btn)
+        
+        groups_actions.addStretch()
+        
+        groups_layout.addLayout(groups_actions)
+        
+        # === ДОБАВЛЯЕМ ВКЛАДКИ ===
+        self.tabs.addTab(keys_widget, "Ключи")
+        self.tabs.addTab(groups_widget, "Группы")
+        
+        layout.addWidget(self.tabs)
     
     def load_data(self, data: list[dict]):
         """
@@ -386,3 +454,193 @@ class KeysPanel(QWidget):
         self._filtered_data = []
         self.table.setRowCount(0)
         self.count_label.setText("0 фраз")
+        self.groups_tree.clear()
+        self._groups = {}
+        self.groups_count_label.setText("0 групп")
+    
+    # === МЕТОДЫ ДЛЯ ВКЛАДКИ "ГРУППЫ" (файл 45) ===
+    
+    def load_groups(self, groups: dict):
+        """
+        Загрузить группы в дерево
+        
+        Args:
+            groups: {group_name: [phrases]} или {cluster_id: {'name': str, 'phrases': [...]}}
+        """
+        self._groups = groups
+        self._render_groups()
+    
+    def _render_groups(self):
+        """Отрисовать дерево групп"""
+        self.groups_tree.clear()
+        
+        if not self._groups:
+            self.groups_count_label.setText("0 групп")
+            return
+        
+        for group_name, data in self._groups.items():
+            # Поддержка двух форматов
+            if isinstance(data, dict):
+                name = data.get('name', str(group_name))
+                phrases = data.get('phrases', [])
+            else:
+                name = str(group_name)
+                phrases = data if isinstance(data, list) else []
+            
+            # Создаем корневой элемент группы
+            root_item = QTreeWidgetItem([name, str(len(phrases))])
+            root_item.setExpanded(False)
+            
+            # Добавляем фразы как дочерние элементы
+            for phrase in phrases:
+                child_item = QTreeWidgetItem([str(phrase), ""])
+                root_item.addChild(child_item)
+            
+            self.groups_tree.addTopLevelItem(root_item)
+        
+        # Обновляем счетчик
+        count = len(self._groups)
+        self.groups_count_label.setText(f"{count} групп" if count != 1 else "1 группа")
+    
+    def _groups_context_menu(self, pos: QPoint):
+        """Контекстное меню на дереве групп"""
+        menu = QMenu(self)
+        
+        item = self.groups_tree.itemAt(pos)
+        
+        # Создать группу
+        create_action = QAction("➕ Создать группу", self)
+        create_action.triggered.connect(self._create_group_in_tree)
+        menu.addAction(create_action)
+        
+        if item:
+            # Если это корневой элемент (группа)
+            if item.parent() is None:
+                # Переименовать
+                rename_action = QAction("✏️ Переименовать", self)
+                rename_action.triggered.connect(self._rename_group)
+                menu.addAction(rename_action)
+                
+                # Удалить
+                delete_action = QAction("🗑️ Удалить группу", self)
+                delete_action.triggered.connect(self._delete_group_from_tree)
+                menu.addAction(delete_action)
+                
+                menu.addSeparator()
+                
+                # Экспорт группы
+                export_action = QAction("📥 Экспортировать группу", self)
+                export_action.triggered.connect(lambda: self._export_group(item))
+                menu.addAction(export_action)
+        
+        menu.exec(self.groups_tree.mapToGlobal(pos))
+    
+    def _create_group_in_tree(self):
+        """Создать новую группу"""
+        name, ok = QInputDialog.getText(
+            self,
+            "Новая группа",
+            "Название группы:"
+        )
+        
+        if ok and name.strip():
+            name = name.strip()
+            if name in self._groups:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Ошибка", f"Группа '{name}' уже существует")
+                return
+            
+            # Создаем пустую группу
+            self._groups[name] = []
+            self._render_groups()
+            
+            print(f"[OK] Создана группа: {name}")
+    
+    def _rename_group(self):
+        """Переименовать выбранную группу"""
+        item = self.groups_tree.currentItem()
+        if not item or item.parent() is not None:
+            return
+        
+        old_name = item.text(0)
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Переименовать группу",
+            "Новое название:",
+            text=old_name
+        )
+        
+        if ok and new_name.strip() and new_name != old_name:
+            new_name = new_name.strip()
+            
+            if new_name in self._groups:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Ошибка", f"Группа '{new_name}' уже существует")
+                return
+            
+            # Переименовываем
+            self._groups[new_name] = self._groups.pop(old_name)
+            self._render_groups()
+            
+            print(f"[OK] Группа переименована: {old_name} → {new_name}")
+    
+    def _delete_group_from_tree(self):
+        """Удалить выбранную группу"""
+        item = self.groups_tree.currentItem()
+        if not item or item.parent() is not None:
+            return
+        
+        group_name = item.text(0)
+        
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self,
+            "Удалить группу",
+            f"Удалить группу '{group_name}' ({item.text(1)} фраз)?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            if group_name in self._groups:
+                del self._groups[group_name]
+                self._render_groups()
+                print(f"[OK] Группа удалена: {group_name}")
+    
+    def _export_group(self, item: QTreeWidgetItem):
+        """Экспортировать группу в CSV"""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from pathlib import Path
+        import csv
+        
+        group_name = item.text(0)
+        phrases = self._groups.get(group_name, [])
+        
+        if isinstance(phrases, dict):
+            phrases = phrases.get('phrases', [])
+        
+        if not phrases:
+            QMessageBox.warning(self, "Экспорт", "Группа пуста")
+            return
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Экспорт группы",
+            str(Path.home() / f"{group_name}.csv"),
+            "CSV files (*.csv)"
+        )
+        
+        if filename:
+            try:
+                with open(filename, 'w', encoding='utf-8-sig', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Фраза'])
+                    for phrase in phrases:
+                        writer.writerow([str(phrase)])
+                
+                QMessageBox.information(
+                    self,
+                    "Экспорт",
+                    f"Экспортировано {len(phrases)} фраз из группы '{group_name}'"
+                )
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка экспорта", str(e))
