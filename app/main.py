@@ -1019,13 +1019,14 @@ class FrequencyResultsTab(QWidget):
 
         self.stats_label = QLabel()
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 8)  # Было 7, стало 8 колонок
         self.table.setHorizontalHeaderLabels([
             "Фраза",
             "Регион",
             "Статус",
-            "Частотность",
-            "Точная",
+            "WS",        # Базовая частотность (было "Частотность")
+            '"WS"',      # ← НОВАЯ КОЛОНКА: частотность в кавычках
+            "!WS",       # Точное соответствие (было "Точная")
             "Попытки",
             "Ошибка",
         ])
@@ -1034,9 +1035,10 @@ class FrequencyResultsTab(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # "WS"
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # !WS
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Попытки
+        header.setSectionResizeMode(7, QHeaderView.Stretch)           # Ошибка
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.verticalHeader().setVisible(False)
@@ -1060,17 +1062,18 @@ class FrequencyResultsTab(QWidget):
         self.table.setRowCount(len(results))
         for row_idx, row in enumerate(results):
             values = [
-                row['mask'],
-                str(row['region']),
-                row['status'],
-                str(row['freq_total']),
-                str(row['freq_exact']),
-                str(row['attempts']),
-                row['error'],
+                row['mask'],                              # Фраза
+                str(row['region']),                       # Регион
+                row['status'],                            # Статус
+                str(row['freq_total']),                   # WS (базовая)
+                str(row.get('freq_quotes', 0)),           # "WS" (в кавычках) ← НОВАЯ КОЛОНКА
+                str(row['freq_exact']),                   # !WS (точное)
+                str(row['attempts']),                     # Попытки
+                row['error'],                             # Ошибка
             ]
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col_idx in (1, 3, 4, 5):
+                if col_idx in (1, 3, 4, 5, 6):  # Выравнивание по центру: Регион, WS, "WS", !WS, Попытки
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row_idx, col_idx, item)
         
@@ -1616,6 +1619,9 @@ class MainWindow(QMainWindow):
         
         # Инициализация статуса при загрузке (файл 43)
         self._initialize_status()
+        
+        # Загружаем тестовые группы для демонстрации (убрать потом)
+        self._load_test_groups()
     
     def _create_menu(self):
         """Создает главное меню"""
@@ -1762,26 +1768,64 @@ class MainWindow(QMainWindow):
             self.log_message(f"Ошибка инициализации: {str(e)}", "ERROR")
     
     def _update_keys_panel(self):
-        """Обновить панель ключей из результатов"""
+        """Обновить панель ключей (группы) из результатов"""
         try:
             from ..services import frequency as frequency_service
             results = frequency_service.list_results(status=None, limit=1000)
             
-            # Преобразуем для панели ключей
-            data = []
-            for r in results:
-                data.append({
-                    'phrase': r['mask'],
-                    'freq_total': r['freq_total'],
-                    'freq_quotes': r.get('freq_quotes', 0),  # Частотность в кавычках ("WS")
-                    'freq_exact': r['freq_exact'],
-                    'status': r['status'],
-                    'group': r.get('group', '') or ''  # Группа из БД
-                })
+            # Группируем фразы по группам
+            groups = {}
+            ungrouped = []
             
-            self.keys_panel.load_data(data)
+            for r in results:
+                phrase = r['mask']
+                group_name = r.get('group', '') or ''
+                
+                if group_name:
+                    if group_name not in groups:
+                        groups[group_name] = []
+                    groups[group_name].append(phrase)
+                else:
+                    ungrouped.append(phrase)
+            
+            # Добавляем группу "Без группы" если есть несгруппированные
+            if ungrouped:
+                groups['Без группы'] = ungrouped
+            
+            # Загружаем группы в панель
+            self.keys_panel.load_groups(groups)
+            
+            self.log_message(f"Обновлены группы: {len(groups)} групп, всего {len(results)} фраз", "INFO")
         except Exception as e:
             print(f"[ERROR] Ошибка обновления панели ключей: {e}")
+            self.log_message(f"Ошибка обновления групп: {e}", "ERROR")
+    
+    def _load_test_groups(self):
+        """Загрузить тестовые группы для демонстрации (временно)"""
+        test_groups = {
+            "Покупка телефонов": [
+                "купить телефон",
+                "купить смартфон", 
+                "заказать телефон",
+                "телефон цена",
+                "смартфон купить недорого"
+            ],
+            "Ремонт телефонов": [
+                "ремонт телефона",
+                "починить телефон",
+                "замена экрана телефона",
+                "сервис телефонов"
+            ],
+            "Аксессуары": [
+                "чехол для телефона",
+                "защитное стекло",
+                "наушники",
+                "зарядка для телефона"
+            ]
+        }
+        
+        self.keys_panel.load_groups(test_groups)
+        self.log_message(f"Загружены тестовые группы: {len(test_groups)} групп", "INFO")
 
 
 def main() -> None:
