@@ -490,27 +490,7 @@ class AccountsTabExtended(QWidget):
         
         layout.addWidget(self.table)
         
-        # Панель статуса логина с мини-логом
-        status_group = QGroupBox("Status and Activity")
-        status_layout = QVBoxLayout()
-        
-        self.login_progress = QProgressBar()
-        self.login_progress.setVisible(False)
-        status_layout.addWidget(self.login_progress)
-        
-        self.login_status_label = QLabel("Готов к работе")
-        status_layout.addWidget(self.login_status_label)
-        
-        # Мини-лог для отображения активности
-        from PySide6.QtWidgets import QTextEdit
-        self.mini_log = QTextEdit()
-        self.mini_log.setMaximumHeight(100)
-        self.mini_log.setReadOnly(True)
-        self.mini_log.setPlaceholderText("Здесь будет отображаться активность...")
-        status_layout.addWidget(self.mini_log)
-        
-        status_group.setLayout(status_layout)
-        layout.addWidget(status_group)
+        # Убрали локальный Status and Activity - используем главный журнал внизу (файл 45)
         
         # Инициализация
         self._accounts = []
@@ -525,15 +505,11 @@ class AccountsTabExtended(QWidget):
         self.log_action(f"{'Выбраны' if state == 2 else 'Сняты'} все аккаунты")
     
     def log_action(self, message):
-        """Добавить сообщение в мини-лог"""
-        from datetime import datetime
-        from PySide6.QtGui import QTextCursor
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.mini_log.append(f"[{timestamp}] {message}")
-        # Прокручиваем вниз
-        cursor = self.mini_log.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        self.mini_log.setTextCursor(cursor)
+        """Добавить сообщение в главный журнал (файл 45)"""
+        # Логируем через главное окно
+        main_window = self.window()
+        if hasattr(main_window, 'log_message'):
+            main_window.log_message(message, "INFO")
     
     def _selected_rows(self) -> List[int]:
         """Получить выбранные строки"""
@@ -1315,11 +1291,11 @@ class AccountsTabExtended(QWidget):
         self.login_thread.finished_signal.connect(self.on_login_finished)
         self.login_thread.start()
         
-        self.login_status_label.setText(f"Запуск {len(accounts)} браузеров...")
+        self.log_action(f"Запуск {len(accounts)} браузеров...")
     
     def on_login_progress(self, message):
         """Обработка прогресса логина"""
-        self.login_status_label.setText(message)
+        self.log_action(message)
     
     def on_account_logged(self, account_id, success, message):
         """Обработка логина конкретного аккаунта"""
@@ -1341,7 +1317,7 @@ class AccountsTabExtended(QWidget):
         else:
             QMessageBox.warning(self, "Внимание", message)
         
-        self.login_status_label.setText("Готов к работе")
+        self.log_action("Готов к работе")
         self.refresh()
     
     def open_browsers_for_login(self):
