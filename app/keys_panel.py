@@ -198,8 +198,8 @@ class KeysPanel(QWidget):
     
     def _rename_group(self):
         """Переименовать выбранную группу"""
-        item = self.groups_tree.currentItem()
-        if not item or item.parent() is not None:
+        item = self.groups_list.currentItem()
+        if not item:
             return
         
         old_name = item.text(0)
@@ -226,8 +226,8 @@ class KeysPanel(QWidget):
     
     def _delete_group_from_tree(self):
         """Удалить выбранную группу"""
-        item = self.groups_tree.currentItem()
-        if not item or item.parent() is not None:
+        item = self.groups_list.currentItem()
+        if not item:
             return
         
         group_name = item.text(0)
