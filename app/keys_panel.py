@@ -246,7 +246,7 @@ class KeysPanel(QWidget):
                 self._render_groups()
                 print(f"[OK] Группа удалена: {group_name}")
     
-    def _export_group(self, item: QTreeWidgetItem):
+    def _export_group(self, item: QListWidgetItem):
         """Экспортировать группу в CSV"""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from pathlib import Path
