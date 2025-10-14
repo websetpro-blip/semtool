@@ -1733,7 +1733,7 @@ class MainWindow(QMainWindow):
         self._apply_theme(self.is_dark_theme)
     
     def _apply_theme(self, is_dark: bool):
-        """Применить Orange Light/Dark дизайн-систему через QSS (файл 43 доп)"""
+        """Применить Beige-Gold Light/Dark дизайн-систему через QSS (файл 43 + 44)"""
         from pathlib import Path
         
         app = QApplication.instance()
@@ -1741,8 +1741,12 @@ class MainWindow(QMainWindow):
         
         # Путь к QSS файлам
         styles_dir = Path(__file__).parent.parent / "styles"
-        # Используем Beige-Gold из файла 44 (НЕ orange!)
-        qss_file = styles_dir / "beige_gold.qss"
+        
+        # Выбор файла в зависимости от темы (файл 43)
+        if is_dark:
+            qss_file = styles_dir / "orange_dark.qss"  # Темная тема
+        else:
+            qss_file = styles_dir / "beige_gold.qss"  # Светлая тема (копия orange_light.qss)
         
         # Загружаем QSS стили
         try:
@@ -1750,13 +1754,17 @@ class MainWindow(QMainWindow):
                 with open(qss_file, 'r', encoding='utf-8') as f:
                     stylesheet = f.read()
                 app.setStyleSheet(stylesheet)
-                print(f"[Theme] Загружена Orange {'Dark' if is_dark else 'Light'} дизайн-система из {qss_file.name}")
+                theme_name = "Dark" if is_dark else "Light"
+                print(f"[Theme] Загружена Beige-Gold {theme_name} дизайн-система из {qss_file.name}")
+                self.log_message(f"Применена тема: Beige-Gold {theme_name}", "INFO")
             else:
                 print(f"[Theme] WARN: QSS файл не найден: {qss_file}")
                 print(f"[Theme] Используется Fusion без кастомных стилей")
+                self.log_message(f"WARN: QSS файл не найден: {qss_file.name}", "WARN")
         except Exception as e:
             print(f"[Theme] ERROR при загрузке QSS: {e}")
             print(f"[Theme] Используется Fusion без кастомных стилей")
+            self.log_message(f"ERROR при загрузке темы: {e}", "ERROR")
     
     def _initialize_status(self):
         """Инициализация статуса при загрузке приложения (файл 43)"""
