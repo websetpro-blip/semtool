@@ -19,9 +19,25 @@ QPushButton:focus{ outline:none; border:1px solid #1A73E8; }
 QPushButton[small="true"]{ min-height:32px; }
 QPushButton[primary="true"]{ background:#FFB300; color:#151515; border:1px solid #E39E00; }
 
-/* Табы без «пилюль» */
-QTabBar::tab{ height:36px; padding:0 12px; border:none; margin:0 8px 0 0; }
-QTabBar::tab:selected{ border-bottom:2px solid #C9A858; }
+/* Табы без «пилюль» - ИСПРАВЛЕНО: добавлен цвет и фон */
+QTabBar::tab{ 
+  height:36px; 
+  padding:0 12px; 
+  border:none; 
+  margin:0 8px 0 0;
+  background:transparent;
+  color:#222;  /* Темный текст - видимый! */
+  border-radius:6px 6px 0 0;
+}
+QTabBar::tab:selected{ 
+  border-bottom:2px solid #C9A858;
+  background:#FFFFFF;
+  color:#222;
+  font-weight:600;
+}
+QTabBar::tab:hover:!selected{
+  background:#FAF7F2;
+}
 
 /* Таблица */
 QTableView{ gridline-color:#E6D9C2; }
