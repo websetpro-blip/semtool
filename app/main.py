@@ -1773,20 +1773,27 @@ class MainWindow(QMainWindow):
             from ..services import frequency as frequency_service
             results = frequency_service.list_results(status=None, limit=1000)
             
-            # Группируем фразы по группам
+            # Группируем фразы по группам С ЧАСТОТНОСТЯМИ
             groups = {}
             ungrouped = []
             
             for r in results:
                 phrase = r['mask']
                 group_name = r.get('group', '') or ''
+                freq_total = r.get('freq_total', 0)  # Частотность WS
+                
+                # Создаем объект с фразой и частотностью
+                phrase_data = {
+                    'phrase': phrase,
+                    'freq_total': freq_total
+                }
                 
                 if group_name:
                     if group_name not in groups:
                         groups[group_name] = []
-                    groups[group_name].append(phrase)
+                    groups[group_name].append(phrase_data)
                 else:
-                    ungrouped.append(phrase)
+                    ungrouped.append(phrase_data)
             
             # Добавляем группу "Без группы" если есть несгруппированные
             if ungrouped:
@@ -1804,23 +1811,23 @@ class MainWindow(QMainWindow):
         """Загрузить тестовые группы для демонстрации (временно)"""
         test_groups = {
             "Покупка телефонов": [
-                "купить телефон",
-                "купить смартфон", 
-                "заказать телефон",
-                "телефон цена",
-                "смартфон купить недорого"
+                {"phrase": "купить телефон", "freq_total": 125678},
+                {"phrase": "купить смартфон", "freq_total": 89234}, 
+                {"phrase": "заказать телефон", "freq_total": 12456},
+                {"phrase": "телефон цена", "freq_total": 234567},
+                {"phrase": "смартфон купить недорого", "freq_total": 4567}
             ],
             "Ремонт телефонов": [
-                "ремонт телефона",
-                "починить телефон",
-                "замена экрана телефона",
-                "сервис телефонов"
+                {"phrase": "ремонт телефона", "freq_total": 56789},
+                {"phrase": "починить телефон", "freq_total": 23456},
+                {"phrase": "замена экрана телефона", "freq_total": 34567},
+                {"phrase": "сервис телефонов", "freq_total": 12345}
             ],
             "Аксессуары": [
-                "чехол для телефона",
-                "защитное стекло",
-                "наушники",
-                "зарядка для телефона"
+                {"phrase": "чехол для телефона", "freq_total": 67890},
+                {"phrase": "защитное стекло", "freq_total": 45678},
+                {"phrase": "наушники", "freq_total": 234567},
+                {"phrase": "зарядка для телефона", "freq_total": 34567}
             ]
         }
         

@@ -156,16 +156,31 @@ class KeysPanel(QWidget):
             
             phrase_count = len(phrases)
             
-            # TODO: Вторая цифра - суммарная частотность WS? Пока 0
-            freq_sum = 0  # Нужно суммировать freq_total из фраз
+            # Суммируем частотность WS всех фраз в группе
+            freq_sum = 0
+            for phrase_item in phrases:
+                if isinstance(phrase_item, dict):
+                    freq_sum += phrase_item.get('freq_total', 0)
+                # Если это просто строка (старый формат), частотность = 0
             
             # Корневой элемент: "название (фраз / частотность)" - КАК В KEY COLLECTOR
             root_item = QTreeWidgetItem([f"{name} ({phrase_count} / {freq_sum})"])
             root_item.setExpanded(False)
             
             # Добавляем фразы как дочерние элементы
-            for phrase in phrases[:10]:  # Первые 10 для скорости
-                child_item = QTreeWidgetItem([f"  {phrase}"])
+            for phrase_item in phrases[:10]:  # Первые 10 для скорости
+                # Поддержка старого (строка) и нового (dict) формата
+                if isinstance(phrase_item, dict):
+                    phrase_text = phrase_item.get('phrase', str(phrase_item))
+                    freq = phrase_item.get('freq_total', 0)
+                    # Показываем частотность если есть
+                    if freq > 0:
+                        child_item = QTreeWidgetItem([f"  {phrase_text} ({freq})"])
+                    else:
+                        child_item = QTreeWidgetItem([f"  {phrase_text}"])
+                else:
+                    # Старый формат - просто строка
+                    child_item = QTreeWidgetItem([f"  {phrase_item}"])
                 root_item.addChild(child_item)
             
             # Если фраз больше 10, добавляем "..."
