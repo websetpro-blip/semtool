@@ -6,10 +6,10 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLineEdit, QLabel, QHBoxLayout, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QMenu, QInputDialog, QComboBox
+    QListWidget, QListWidgetItem, QMenu, QInputDialog, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QPoint
-from PySide6.QtGui import QAction, QColor
+from PySide6.QtGui import QAction, QColor, QFont
 
 
 class KeysPanel(QWidget):
@@ -54,16 +54,13 @@ class KeysPanel(QWidget):
         self.search_edit.textChanged.connect(self._filter_groups)
         layout.addWidget(self.search_edit)
         
-        # Дерево групп (без колонок, как в Key Collector)
-        self.groups_tree = QTreeWidget()
-        self.groups_tree.setHeaderHidden(True)  # Скрываем заголовки
-        self.groups_tree.setColumnCount(1)      # Одна колонка
-        self.groups_tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.groups_tree.customContextMenuRequested.connect(self._groups_context_menu)
-        self.groups_tree.setAlternatingRowColors(True)
-        self.groups_tree.setAnimated(True)
+        # ПРОСТОЙ СПИСОК групп (как в Key Collector - НЕ дерево!)
+        self.groups_list = QListWidget()
+        self.groups_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.groups_list.customContextMenuRequested.connect(self._groups_context_menu)
+        self.groups_list.setAlternatingRowColors(True)
         
-        layout.addWidget(self.groups_tree, 1)
+        layout.addWidget(self.groups_list, 1)
         
         # Кнопки управления группами
         groups_actions = QHBoxLayout()
@@ -91,36 +88,20 @@ class KeysPanel(QWidget):
         """Фильтровать группы по поисковому запросу"""
         text = text.lower().strip()
         
-        # Если поиск пустой, показываем все
-        if not text:
-            for i in range(self.groups_tree.topLevelItemCount()):
-                self.groups_tree.topLevelItem(i).setHidden(False)
-            return
-        
-        # Фильтруем группы
-        for i in range(self.groups_tree.topLevelItemCount()):
-            item = self.groups_tree.topLevelItem(i)
-            group_name = item.text(0).lower()
+        # Фильтруем элементы списка
+        for i in range(self.groups_list.count()):
+            item = self.groups_list.item(i)
+            group_name = item.text().lower()
             
-            # Проверяем название группы
-            if text in group_name:
+            # Показываем/скрываем в зависимости от поиска
+            if not text or text in group_name:
                 item.setHidden(False)
-                continue
-            
-            # Проверяем фразы внутри группы
-            has_match = False
-            for j in range(item.childCount()):
-                child = item.child(j)
-                phrase = child.text(0).lower()
-                if text in phrase:
-                    has_match = True
-                    break
-            
-            item.setHidden(not has_match)
+            else:
+                item.setHidden(True)
     
     def clear(self):
         """Очистить панель"""
-        self.groups_tree.clear()
+        self.groups_list.clear()
         self._groups = {}
         self._render_groups()  # Перерисовать (с Корзиной)
     
@@ -137,13 +118,13 @@ class KeysPanel(QWidget):
         self._render_groups()
     
     def _render_groups(self):
-        """Отрисовать дерево групп (как в Key Collector)"""
-        self.groups_tree.clear()
+        """Отрисовать СПИСОК групп (как в Key Collector - НЕ дерево!)"""
+        self.groups_list.clear()
         
         # Добавляем "Корзина (0)" первой (как в Key Collector)
-        trash_item = QTreeWidgetItem([f"Корзина (0 / 0)"])
-        trash_item.setForeground(0, QColor("#999"))  # Серый цвет
-        self.groups_tree.addTopLevelItem(trash_item)
+        trash_item = QListWidgetItem("Корзина (0)")
+        trash_item.setForeground(QColor("#999"))  # Серый цвет
+        self.groups_list.addItem(trash_item)
         
         for group_name, data in self._groups.items():
             # Поддержка двух форматов
@@ -156,45 +137,16 @@ class KeysPanel(QWidget):
             
             phrase_count = len(phrases)
             
-            # Суммируем частотность WS всех фраз в группе
-            freq_sum = 0
-            for phrase_item in phrases:
-                if isinstance(phrase_item, dict):
-                    freq_sum += phrase_item.get('freq_total', 0)
-                # Если это просто строка (старый формат), частотность = 0
-            
-            # Корневой элемент: "название (фраз / частотность)" - КАК В KEY COLLECTOR
-            root_item = QTreeWidgetItem([f"{name} ({phrase_count} / {freq_sum})"])
-            root_item.setExpanded(False)
-            
-            # Добавляем фразы как дочерние элементы
-            for phrase_item in phrases[:10]:  # Первые 10 для скорости
-                # Поддержка старого (строка) и нового (dict) формата
-                if isinstance(phrase_item, dict):
-                    phrase_text = phrase_item.get('phrase', str(phrase_item))
-                    freq = phrase_item.get('freq_total', 0)
-                    # Показываем частотность если есть
-                    if freq > 0:
-                        child_item = QTreeWidgetItem([f"  {phrase_text} ({freq})"])
-                    else:
-                        child_item = QTreeWidgetItem([f"  {phrase_text}"])
-                else:
-                    # Старый формат - просто строка
-                    child_item = QTreeWidgetItem([f"  {phrase_item}"])
-                root_item.addChild(child_item)
-            
-            # Если фраз больше 10, добавляем "..."
-            if len(phrases) > 10:
-                more_item = QTreeWidgetItem([f"  ... еще {len(phrases) - 10} фраз"])
-                root_item.addChild(more_item)
-            
-            self.groups_tree.addTopLevelItem(root_item)
+            # В Key Collector показывается только количество, НЕ частотность
+            # Простой формат: "название (количество)"
+            list_item = QListWidgetItem(f"{name} ({phrase_count})")
+            self.groups_list.addItem(list_item)
     
     def _groups_context_menu(self, pos: QPoint):
-        """Контекстное меню на дереве групп"""
+        """Контекстное меню на списке групп"""
         menu = QMenu(self)
         
-        item = self.groups_tree.itemAt(pos)
+        item = self.groups_list.itemAt(pos)
         
         # Создать группу
         create_action = QAction("➕ Создать группу", self)
@@ -202,8 +154,8 @@ class KeysPanel(QWidget):
         menu.addAction(create_action)
         
         if item:
-            # Если это корневой элемент (группа)
-            if item.parent() is None:
+            # В списке все элементы - группы (нет дочерних)
+            if item:
                 # Переименовать
                 rename_action = QAction("✏️ Переименовать", self)
                 rename_action.triggered.connect(self._rename_group)
@@ -221,7 +173,7 @@ class KeysPanel(QWidget):
                 export_action.triggered.connect(lambda: self._export_group(item))
                 menu.addAction(export_action)
         
-        menu.exec(self.groups_tree.mapToGlobal(pos))
+        menu.exec(self.groups_list.mapToGlobal(pos))
     
     def _create_group_in_tree(self):
         """Создать новую группу"""
