@@ -202,7 +202,7 @@ class KeysPanel(QWidget):
         if not item:
             return
         
-        old_name = item.text(0)
+        old_name = item.text()  # QListWidget использует text(), не text(0)
         new_name, ok = QInputDialog.getText(
             self,
             "Переименовать группу",
