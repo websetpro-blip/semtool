@@ -230,7 +230,7 @@ class KeysPanel(QWidget):
         if not item:
             return
         
-        group_name = item.text(0)
+        group_name = item.text()
         
         from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(
