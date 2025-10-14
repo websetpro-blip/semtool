@@ -26,8 +26,8 @@
 
 /* === ГЛОБАЛЬНЫЕ СТИЛИ === */
 * {
-    font-family: "Inter", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
-    font-size: 13px;  /* УМЕНЬШЕНО: было 14px → 13px */
+    font-family: "Segoe UI", "Inter", "Segoe UI Variable", Arial, sans-serif;
+    font-size: 10pt;  /* ИСПРАВЛЕНО: файл 45 - pt вместо px */
 }
 
 QMainWindow, QDialog, QWidget {
@@ -134,9 +134,9 @@ QPushButton[primary="true"]:pressed {
 
 /* SMALL кнопки - 24px */
 QPushButton[small="true"], QPushButton[size="small"] {
-    min-height: 24px;  /* УМЕНЬШЕНО: было 28px → 24px */
+    min-height: 24px;
     padding: 0 8px;
-    font-size: 12px;
+    font-size: 9pt;  /* pt вместо px */
 }
 
 /* LARGE кнопки - 32px */
@@ -494,17 +494,17 @@ QMenu::separator {
     margin: 4px 8px;
 }
 
-/* === SPLITTER === */
+/* === SPLITTER (файл 45 - 6px чтобы не ехал на DPI>100%) === */
 QSplitter::handle {
     background: #E8E1CF;
 }
 
 QSplitter::handle:horizontal {
-    width: 1px;
+    width: 6px;  /* ИСПРАВЛЕНО: было 1px → 6px */
 }
 
 QSplitter::handle:vertical {
-    height: 1px;
+    height: 6px;  /* ИСПРАВЛЕНО: было 1px → 6px */
 }
 
 QSplitter::handle:hover {
@@ -545,7 +545,7 @@ QPlainTextEdit#jobLog, QTextEdit#jobLog {
     border-radius: 8px;
     padding: 8px;
     font-family: "Cascadia Mono", "Consolas", "JetBrains Mono", monospace;
-    font-size: 13px;
+    font-size: 9pt;  /* pt вместо px */
 }
 
 /* Toolbar - 32px высота (файл 45) */
@@ -577,7 +577,7 @@ QDialogButtonBox QPushButton {
 
 /* === LABEL КЛАССЫ === */
 QLabel[heading="true"] {
-    font-size: 16px;
+    font-size: 12pt;  /* pt вместо px */
     font-weight: 600;
     color: #1F2937;
 }

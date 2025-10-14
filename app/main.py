@@ -1576,6 +1576,7 @@ class MainWindow(QMainWindow):
         
         # ВЕРТИКАЛЬНЫЙ сплиттер для левой части: вкладки сверху, журнал внизу (файл 42!)
         left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.setHandleWidth(6)  # Файл 45: 6px чтобы не ехал на DPI>100%
         left_splitter.addWidget(tabs)
         left_splitter.addWidget(log_container)
         left_splitter.setSizes([500, 150])  # Вкладки больше, журнал меньше
@@ -1584,6 +1585,7 @@ class MainWindow(QMainWindow):
         
         # ГОРИЗОНТАЛЬНЫЙ сплиттер: левая часть, справа панель ключей
         main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setHandleWidth(6)  # Файл 45: 6px чтобы не ехал на DPI>100%
         main_splitter.addWidget(left_splitter)
         main_splitter.addWidget(self.keys_panel)
         main_splitter.setSizes([700, 300])  # 70% слева, 30% справа
