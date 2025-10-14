@@ -52,6 +52,7 @@ from .turbo_tab_qt import TurboParserTab
 from .full_pipeline_tab import FullPipelineTab
 from .accounts_tab_extended import AccountsTabExtended
 from .keys_panel import KeysPanel
+from .tabs import ParsingTab  # Новая единая вкладка парсинга
 from ..core.models import Task
 from ..core.regions import load_regions
 
@@ -1564,8 +1565,12 @@ class MainWindow(QMainWindow):
         self.turbo_tab = TurboParserTab()
         self.full_pipeline_tab = FullPipelineTab()
         
+        # Новая единая вкладка Парсинг (объединяет Турбо/Частотность/Вглубь)
+        self.parsing_tab = ParsingTab()
+        
         tabs = QTabWidget()
         tabs.addTab(self.accounts_tab, "Аккаунты")
+        tabs.addTab(self.parsing_tab, "📊 Парсинг")  # Новая единая вкладка
         tabs.addTab(self.prep_tab, "Подготовка фраз")
         tabs.addTab(self.turbo_tab, "⚡ Турбо Парсер")
         tabs.addTab(self.full_pipeline_tab, "🚀 Full Pipeline")
@@ -1837,6 +1842,14 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    
+    # Применяем темную тему из файла 46
+    qss_file = Path(__file__).parent.parent / "styles" / "semtool_dark.qss"
+    if qss_file.exists():
+        with open(qss_file, 'r', encoding='utf-8') as f:
+            app.setStyleSheet(f.read())
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
