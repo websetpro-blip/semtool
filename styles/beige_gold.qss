@@ -27,7 +27,7 @@
 /* === ГЛОБАЛЬНЫЕ СТИЛИ === */
 * {
     font-family: "Inter", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
-    font-size: 14px;
+    font-size: 13px;  /* УМЕНЬШЕНО: было 14px → 13px */
 }
 
 QMainWindow, QDialog, QWidget {
@@ -65,10 +65,10 @@ QTabWidget::pane {
 QTabBar::tab {
     background: transparent;
     color: #1F2937;
-    min-height: 32px;  /* ИСПРАВЛЕНО: было 36px → 32px (файл 45) */
+    min-height: 28px;  /* УМЕНЬШЕНО: было 32px → 28px */
     padding: 0 12px;
     border: 1px solid transparent;
-    border-top-left-radius: 4px;  /* ИСПРАВЛЕНО: было 6px → 4px (файл 45) */
+    border-top-left-radius: 4px;
     border-top-right-radius: 4px;
     margin-right: 8px;
     font-weight: 500;
@@ -91,10 +91,10 @@ QPushButton {
     background-color: #FFFFFF;
     color: #1F2937;
     border: 1px solid #E8E1CF;
-    border-radius: 6px;  /* ПРАВИЛЬНО: 6px базовый */
-    padding: 0 12px;  /* УМЕНЬШЕНО: было 16px → 12px (компактнее) */
+    border-radius: 6px;
+    padding: 0 12px;
     font-weight: 500;
-    min-height: 32px;  /* ИСПРАВЛЕНО: базовая высота 32px (файл 45) */
+    min-height: 28px;  /* УМЕНЬШЕНО: было 32px → 28px (компактнее) */
 }
 
 QPushButton:hover {
@@ -132,16 +132,16 @@ QPushButton[primary="true"]:pressed {
     background-color: #C97800;
 }
 
-/* SMALL кнопки - 28px (файл 45) */
+/* SMALL кнопки - 24px */
 QPushButton[small="true"], QPushButton[size="small"] {
-    min-height: 28px;  /* ИСПРАВЛЕНО: было 32px → 28px */
-    padding: 0 12px;
-    font-size: 13px;
+    min-height: 24px;  /* УМЕНЬШЕНО: было 28px → 24px */
+    padding: 0 8px;
+    font-size: 12px;
 }
 
-/* LARGE кнопки - 36px */
+/* LARGE кнопки - 32px */
 QPushButton[large="true"] {
-    min-height: 36px;  /* 36px для крупных CTA */
+    min-height: 32px;  /* УМЕНЬШЕНО: было 36px → 32px */
 }
 
 /* Плоские кнопки */
@@ -189,7 +189,7 @@ QLineEdit {
     color: #1F2937;
     selection-background-color: rgba(242, 160, 7, 0.2);
     selection-color: #1F2937;
-    min-height: 32px;  /* ИСПРАВЛЕНО: базовая высота 32px */
+    min-height: 28px;  /* УМЕНЬШЕНО: было 32px → 28px */
 }
 
 QTextEdit, QPlainTextEdit {
@@ -224,7 +224,7 @@ QComboBox {
     background: #FFFFFF;
     color: #1F2937;
     selection-background-color: #FAF7EF;
-    min-height: 32px;  /* ИСПРАВЛЕНО: базовая высота 32px */
+    min-height: 28px;  /* УМЕНЬШЕНО: было 32px → 28px */
 }
 
 QComboBox:hover {
@@ -281,7 +281,7 @@ QSpinBox, QDoubleSpinBox {
     border-radius: 6px;
     padding: 0 12px;
     background: #FFFFFF;
-    min-height: 32px;  /* Базовая высота */
+    min-height: 28px;  /* УМЕНЬШЕНО: было 32px → 28px */
 }
 
 QSpinBox:focus, QDoubleSpinBox:focus {

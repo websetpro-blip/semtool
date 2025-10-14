@@ -1550,6 +1550,9 @@ class MainWindow(QMainWindow):
         # ОДИН журнал логов с прокруткой
         log_layout.addWidget(self.log_widget)
         
+        # ВАЖНО: минимальная высота чтобы не схлопывался (файл 45)
+        log_container.setMinimumHeight(120)
+        
         self.results_tab = FrequencyResultsTab()
         self.collect_tab = CollectTab(self.accounts_tab, self.tasks_tab, self.log_widget, self.results_tab)
         self.deep_tab = DeepTab(self.log_widget, self.tasks_tab)
