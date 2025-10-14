@@ -6,10 +6,10 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLineEdit, QLabel, QHBoxLayout, QPushButton,
-    QListWidget, QListWidgetItem, QMenu, QInputDialog, QComboBox
+    QTreeWidget, QTreeWidgetItem, QMenu, QInputDialog, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QPoint
-from PySide6.QtGui import QAction, QColor, QFont
+from PySide6.QtGui import QAction, QColor, QFont, QIcon
 
 
 class KeysPanel(QWidget):
@@ -54,13 +54,17 @@ class KeysPanel(QWidget):
         self.search_edit.textChanged.connect(self._filter_groups)
         layout.addWidget(self.search_edit)
         
-        # ПРОСТОЙ СПИСОК групп (как в Key Collector - НЕ дерево!)
-        self.groups_list = QListWidget()
-        self.groups_list.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.groups_list.customContextMenuRequested.connect(self._groups_context_menu)
-        self.groups_list.setAlternatingRowColors(True)
+        # ДЕРЕВО групп с раскрытием (как в Key Collector!)
+        self.groups_tree = QTreeWidget()
+        self.groups_tree.setHeaderLabels(["Группа / Фраза", ""])  # 2 колонки
+        self.groups_tree.setColumnWidth(0, 300)
+        self.groups_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.groups_tree.customContextMenuRequested.connect(self._groups_context_menu)
+        self.groups_tree.setAlternatingRowColors(True)
+        self.groups_tree.setRootIsDecorated(True)  # Показываем стрелки раскрытия
+        self.groups_tree.setIndentation(15)
         
-        layout.addWidget(self.groups_list, 1)
+        layout.addWidget(self.groups_tree, 1)
         
         # Кнопки управления группами
         groups_actions = QHBoxLayout()
@@ -88,10 +92,11 @@ class KeysPanel(QWidget):
         """Фильтровать группы по поисковому запросу"""
         text = text.lower().strip()
         
-        # Фильтруем элементы списка
-        for i in range(self.groups_list.count()):
-            item = self.groups_list.item(i)
-            group_name = item.text().lower()
+        # Фильтруем дерево
+        root = self.groups_tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            group_name = item.text(0).lower()
             
             # Показываем/скрываем в зависимости от поиска
             if not text or text in group_name:
@@ -118,13 +123,13 @@ class KeysPanel(QWidget):
         self._render_groups()
     
     def _render_groups(self):
-        """Отрисовать СПИСОК групп (как в Key Collector - НЕ дерево!)"""
-        self.groups_list.clear()
+        """Отрисовать ДЕРЕВО групп с фразами (как в Key Collector!)"""
+        self.groups_tree.clear()
         
         # Добавляем "Корзина (0)" первой (как в Key Collector)
-        trash_item = QListWidgetItem("Корзина (0)")
-        trash_item.setForeground(QColor("#999"))  # Серый цвет
-        self.groups_list.addItem(trash_item)
+        trash = QTreeWidgetItem(["Корзина (0)", ""])
+        trash.setForeground(0, QColor("#999"))
+        self.groups_tree.addTopLevelItem(trash)
         
         for group_name, data in self._groups.items():
             # Поддержка двух форматов
@@ -135,38 +140,95 @@ class KeysPanel(QWidget):
                 name = str(group_name)
                 phrases = data if isinstance(data, list) else []
             
-            phrase_count = len(phrases)
+            # Формат: "название (количество)"
+            count = len(phrases)
             
-            # В Key Collector показывается только количество, НЕ частотность
-            # Простой формат: "название (количество)"
-            list_item = QListWidgetItem(f"{name} ({phrase_count})")
-            self.groups_list.addItem(list_item)
+            # Создаем корневой элемент группы
+            group_item = QTreeWidgetItem([f"{name} ({count})", ""])
+            
+            # Применяем стиль к группе
+            font = group_item.font(0)
+            font.setBold(True)
+            group_item.setFont(0, font)
+            
+            # Цвет по умолчанию для группы
+            group_color = data.get('color') if isinstance(data, dict) else None
+            if group_color:
+                group_item.setBackground(0, QColor(group_color))
+            
+            if count == 0:
+                group_item.setForeground(0, QColor("#999"))
+            
+            # Добавляем фразы как дочерние элементы
+            for phrase_data in phrases:
+                phrase_text = phrase_data.get("phrase", phrase_data) if isinstance(phrase_data, dict) else phrase_data
+                
+                # Создаем элемент фразы
+                phrase_item = QTreeWidgetItem([phrase_text, ""])
+                phrase_item.setForeground(0, QColor("#ddd"))
+                
+                group_item.addChild(phrase_item)
+            
+            self.groups_tree.addTopLevelItem(group_item)
+        
+        # Раскрываем все группы по умолчанию
+        self.groups_tree.expandAll()
     
     def _groups_context_menu(self, pos: QPoint):
-        """Контекстное меню на списке групп"""
+        """Контекстное меню на дереве групп"""
         menu = QMenu(self)
         
-        item = self.groups_list.itemAt(pos)
+        item = self.groups_tree.itemAt(pos)
         
         # Создать группу
         create_action = QAction("➕ Создать группу", self)
         create_action.triggered.connect(self._create_group_in_tree)
         menu.addAction(create_action)
         
-        if item:
-            # В списке все элементы - группы (нет дочерних)
-            if item:
-                # Переименовать
-                rename_action = QAction("✏️ Переименовать", self)
-                rename_action.triggered.connect(self._rename_group)
-                menu.addAction(rename_action)
-                
-                # Удалить
-                delete_action = QAction("🗑️ Удалить группу", self)
-                delete_action.triggered.connect(self._delete_group_from_tree)
-                menu.addAction(delete_action)
-                
-                menu.addSeparator()
+        if item and not item.parent():  # Только для групп, не для фраз
+            menu.addSeparator()
+            
+            # Переименовать
+            rename_action = QAction("✏️ Переименовать", self)
+            rename_action.triggered.connect(self._rename_group)
+            menu.addAction(rename_action)
+            
+            # Назначить цвет (как в Key Collector!)
+            color_menu = QMenu("🎨 Назначить цвет", self)
+            
+            # Предустановленные цвета
+            colors = [
+                ("#FFD700", "Желтый"),
+                ("#90EE90", "Зеленый"),
+                ("#87CEEB", "Голубой"),
+                ("#FFA500", "Оранжевый"),
+                ("#FF69B4", "Розовый"),
+                ("#DDA0DD", "Сиреневый"),
+                ("#F0E68C", "Бежевый"),
+                ("", "Без цвета")
+            ]
+            
+            for color_code, color_name in colors:
+                color_action = QAction(color_name, self)
+                if color_code:
+                    # Показываем цвет в иконке
+                    from PySide6.QtGui import QPixmap, QPainter
+                    pixmap = QPixmap(16, 16)
+                    pixmap.fill(QColor(color_code))
+                    color_action.setIcon(QIcon(pixmap))
+                color_action.triggered.connect(lambda checked, c=color_code: self._set_group_color(c))
+                color_menu.addAction(color_action)
+            
+            menu.addMenu(color_menu)
+            
+            menu.addSeparator()
+            
+            # Удалить
+            delete_action = QAction("🗑️ Удалить группу", self)
+            delete_action.triggered.connect(self._delete_group_from_tree)
+            menu.addAction(delete_action)
+            
+            menu.addSeparator()
                 
                 # Экспорт группы
                 export_action = QAction("📥 Экспортировать группу", self)
@@ -198,11 +260,11 @@ class KeysPanel(QWidget):
     
     def _rename_group(self):
         """Переименовать выбранную группу"""
-        item = self.groups_list.currentItem()
-        if not item:
+        item = self.groups_tree.currentItem()
+        if not item or item.parent():  # Игнорируем если это фраза, а не группа
             return
         
-        old_name = item.text()  # QListWidget использует text(), не text(0)
+        old_name = item.text(0).split(" (")[0]  # Убираем счетчик
         new_name, ok = QInputDialog.getText(
             self,
             "Переименовать группу",
@@ -226,17 +288,18 @@ class KeysPanel(QWidget):
     
     def _delete_group_from_tree(self):
         """Удалить выбранную группу"""
-        item = self.groups_list.currentItem()
-        if not item:
+        item = self.groups_tree.currentItem()
+        if not item or item.parent():  # Игнорируем если это фраза
             return
         
-        group_name = item.text()
+        group_name = item.text(0).split(" (")[0]
+        phrases_count = item.childCount()
         
         from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(
             self,
             "Удалить группу",
-            f"Удалить группу '{group_name}' ({item.text(1)} фраз)?",
+            f"Удалить группу '{group_name}' ({phrases_count} фраз)?",
             QMessageBox.Yes | QMessageBox.No
         )
         
@@ -246,7 +309,7 @@ class KeysPanel(QWidget):
                 self._render_groups()
                 print(f"[OK] Группа удалена: {group_name}")
     
-    def _export_group(self, item: QListWidgetItem):
+    def _export_group(self, item: QTreeWidgetItem):
         """Экспортировать группу в CSV"""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from pathlib import Path
@@ -284,3 +347,34 @@ class KeysPanel(QWidget):
                 )
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка экспорта", str(e))
+
+    def _set_group_color(self, color_code: str):
+        """Назначить цвет группе (как в Key Collector)"""
+        item = self.groups_tree.currentItem()
+        if not item or item.parent():  # Только для групп
+            return
+        
+        group_name = item.text(0).split(" (")[0]
+        
+        # Применяем цвет
+        if color_code:
+            item.setBackground(0, QColor(color_code))
+            # Сохраняем в данных группы
+            if group_name in self._groups:
+                if isinstance(self._groups[group_name], dict):
+                    self._groups[group_name]['color'] = color_code
+                else:
+                    # Конвертируем в dict формат
+                    self._groups[group_name] = {
+                        'name': group_name,
+                        'phrases': self._groups[group_name],
+                        'color': color_code
+                    }
+        else:
+            # Убираем цвет
+            item.setBackground(0, QColor("transparent"))
+            if group_name in self._groups and isinstance(self._groups[group_name], dict):
+                self._groups[group_name].pop('color', None)
+        
+        print(f"[OK] Цвет группы '{group_name}' изменен на {color_code or 'без цвета'}")
+

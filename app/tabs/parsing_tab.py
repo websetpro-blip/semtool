@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QSp
                                QTableWidgetItem, QProgressBar)
 from PySide6.QtCore import Qt, QThread, Signal
 from ..widgets.geo_tree import GeoTree
-from ..widgets.keys_panel_new import KeysPanelNew
+from ..keys_panel import KeysPanel  # Используем существующий KeysPanel
 import time
 
 class ParsingWorker(QThread):
@@ -188,7 +188,7 @@ class ParsingTab(QWidget):
         center_layout.addWidget(self.table, 1)
         
         # ---- RIGHT: панель ключей/групп ----
-        self.right_panel = KeysPanelNew()
+        self.right_panel = KeysPanel()
         
         # Собираем все вместе
         splitter.addWidget(left)
@@ -280,15 +280,24 @@ class ParsingTab(QWidget):
             for j, val in enumerate(values):
                 self.table.setItem(i, j, QTableWidgetItem(str(val)))
         
-        # Обновляем правую панель
-        keys_data = [{
-            "phrase": r["phrase"],
-            "ws": r.get("ws", 0),
-            "qws": r.get("qws", 0),
-            "bws": r.get("bws", 0),
-            "status": r.get("status", "")
-        } for r in rows]
-        self.right_panel.load_keys(keys_data)
+        # Обновляем правую панель - добавляем фразы в группы
+        # Группируем по первому слову для демонстрации
+        from collections import defaultdict
+        groups_data = defaultdict(list)
+        
+        for r in rows:
+            phrase = r["phrase"]
+            # Определяем группу по первому слову
+            first_word = phrase.split()[0] if phrase else "Прочее"
+            groups_data[first_word].append({
+                "phrase": phrase,
+                "freq": r.get("ws", 0),
+                "freq_quotes": r.get("qws", 0),
+                "freq_exact": r.get("bws", 0)
+            })
+        
+        # Конвертируем в формат для KeysPanel
+        self.right_panel.update_groups(groups_data)
     
     def on_export(self):
         """Экспорт в CSV"""
