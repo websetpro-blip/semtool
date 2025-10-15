@@ -47,7 +47,7 @@ class AutoLoginThread(QThread):
         self.secret_answer = answer
         
     def run(self):
-        """Р—Р°РїСѓСЃРє СѓРјРЅРѕРіРѕ Р°РІС‚РѕР»РѕРіРёРЅР° РЅР° РѕСЃРЅРѕРІРµ СЂРµС€РµРЅРёСЏ GPT"""
+        """Запуск умного автологина на основе решения GPT"""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
