@@ -30,7 +30,7 @@
 ## 📁 ДОБАВЛЕННЫЕ ФАЙЛЫ
 
 ```
-semtool/
+keyset/
 ├── workers/
 │   └── turbo_parser_integration.py  # Основной модуль парсера
 ├── app/
@@ -42,15 +42,15 @@ semtool/
 
 ### Быстрый старт:
 
-1. **Запустить SemTool:**
+1. **Запустить KeySet:**
 ```bash
 cd C:\AI\yandex
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 Или через батник:
 ```bash
-C:\AI\yandex\run_turbo_semtool.bat
+C:\AI\yandex\run_turbo_keyset.bat
 ```
 
 2. **Перейти на вкладку "⚡ Турбо Парсер"**
@@ -91,7 +91,7 @@ C:\AI\yandex\run_turbo_semtool.bat
 ## 📊 РЕЗУЛЬТАТЫ
 
 Результаты автоматически сохраняются в:
-- **БД:** `semtool/data/semtool.db`
+- **БД:** `keyset/data/keyset.db`
 - **Таблица:** `freq_results`
 - **CSV экспорт:** через кнопку "📊 Экспорт в CSV"
 

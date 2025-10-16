@@ -36,7 +36,7 @@ Python кэширует импортированные модули. После 
 
 ### Шаг 1: Закройте GUI
 ```powershell
-# Закройте окно SemTool
+# Закройте окно KeySet
 # Убедитесь что процесс Python завершен:
 Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
@@ -48,7 +48,7 @@ Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
 
 ### Шаг 2: Подтяните изменения из GitHub
 ```powershell
-cd C:\AI\yandex\semtool
+cd C:\AI\yandex\keyset
 git pull origin main
 ```
 
@@ -113,7 +113,7 @@ python -c "from core.db import get_db_connection; conn = get_db_connection().__e
 
 ### Шаг 5: Перезапустите GUI
 ```powershell
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 **ИЛИ в Cursor/VS Code:**
@@ -212,7 +212,7 @@ Get-Process python | Stop-Process -Force
 git pull origin main
 
 # 3. Перезапустите
-python -m semtool.app.main
+python -m keyset.app.main
 
 # ПРИМЕЧАНИЕ: Python автоматически обновит кэш (.pyc файлы)
 # когда увидит что .py файлы новее. Удалять __pycache__ 
@@ -240,7 +240,7 @@ python -c "from core.db import get_db_connection; conn = get_db_connection().__e
 
 После успешного обновления:
 
-1. ✅ Запустите GUI - `python -m semtool.app.main`
+1. ✅ Запустите GUI - `python -m keyset.app.main`
 2. ✅ Перейдите на вкладку **Turbo Parser**
 3. ✅ Загрузите тестовый файл с 5-10 фразами
 4. ✅ Запустите парсинг
@@ -254,7 +254,7 @@ python -c "from core.db import get_db_connection; conn = get_db_connection().__e
 - `0f556b7` - feat: add full turbo parser pipeline services
 - `8d9005d` - feat: add WAL mode and turbo parser tables to database
 
-**Репозиторий:** https://github.com/websetpro-blip/semtool
+**Репозиторий:** https://github.com/websetpro-blip/keyset
 
 ---
 

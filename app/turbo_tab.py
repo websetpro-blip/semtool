@@ -374,7 +374,7 @@ class TurboParserTab(QWidget):
         if filename:
             import csv
             
-            with open(filename, "w", encoding="utf-8", newline="") as f:
+            with open(filename, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.writer(f, delimiter=";")
                 writer.writerow(["Фраза", "Частотность", "Регион", "Время"])
                 

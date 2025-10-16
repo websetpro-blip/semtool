@@ -1,5 +1,5 @@
 """
-Утилиты для SemTool
+Утилиты для KeySet
 """
 
 from .proxy import parse_proxy

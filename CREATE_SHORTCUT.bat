@@ -1,17 +1,32 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 echo ========================================
-echo   SemTool - Создание ярлыка
-echo ========================================
+echo   KeySet - Создание ярлыка
+console output
+
 echo.
 
-powershell -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut(\"$env:USERPROFILE\OneDrive\Desktop\SemTool.lnk\"); $Shortcut.TargetPath = \"C:\AI\.venv\Scripts\pythonw.exe\"; $Shortcut.Arguments = \"C:\AI\yandex\semtool\run_semtool.pyw\"; $Shortcut.WorkingDirectory = \"C:\AI\yandex\semtool\"; $Shortcut.IconLocation = \"C:\Python313\DLLs\py.ico\"; $Shortcut.Description = \"SemTool - Yandex Wordstat Parser\"; $Shortcut.Save(); Write-Host \"[OK] Ярлык создан на рабочем столе\""
+echo Создаю ярлык KeySet.lnk на рабочем столе...
+
+powershell -ExecutionPolicy Bypass -Command "
+     = [Environment]::GetFolderPath('Desktop');
+     = Join-Path  'KeySet.lnk';
+     = New-Object -ComObject WScript.Shell;
+     = .CreateShortcut();
+    .TargetPath = 'C:\AI\.venv\Scripts\pythonw.exe';
+    .Arguments = ' "C:\AI\yandex\keyset\run_keyset.pyw"';
+    .WorkingDirectory = 'C:\AI\yandex\keyset';
+    if (Test-Path 'C:\AI\yandex\keyset\keyset_icon.ico') { .IconLocation = 'C:\AI\yandex\keyset\keyset_icon.ico'; }
+    .Description = 'KeySet — парсер Yandex Wordstat';
+    .WindowStyle = 7;
+    .Save();
+    Write-Host '[OK] Ярлык создан на рабочем столе'
+"
 
 echo.
 echo ========================================
 echo   Готово!
 echo ========================================
-echo   Ярлык SemTool создан на рабочем столе
-echo   Можно закрыть это окно
+echo   Ярлык KeySet создан на рабочем столе
 echo ========================================
 pause

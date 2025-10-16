@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QMessageBox, QDialog,
     QProgressBar, QLabel, QGroupBox, QCheckBox,
-    QLineEdit, QInputDialog, QFileDialog
+    QLineEdit, QInputDialog, QFileDialog,
+    QStyledItemDelegate, QComboBox
 )
 
 from ..services import accounts as account_service
@@ -28,6 +29,47 @@ from ..services.accounts import test_proxy, get_cookies_status, autologin_accoun
 from ..services.captcha import CaptchaService
 from ..workers.visual_browser_manager import VisualBrowserManager, BrowserStatus
 # Старый worker больше не используется, теперь CDP подход
+
+PROFILE_SELECT_COLUMN = 5
+PROFILE_OPTIONS_ROLE = Qt.UserRole + 101
+
+
+class ProfileComboDelegate(QStyledItemDelegate):
+    """Делегат для редактирования профилей аккаунтов (ComboBox)."""
+
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.setEditable(False)
+        options = index.data(PROFILE_OPTIONS_ROLE) or []
+        for opt in options:
+            if isinstance(opt, dict):
+                value = opt.get("value")
+                label = opt.get("label", value)
+            elif isinstance(opt, (list, tuple)) and len(opt) >= 2:
+                value, label = opt[0], opt[1]
+            else:
+                value = opt
+                label = opt
+            editor.addItem(str(label), value)
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.data(Qt.EditRole)
+        if value is None:
+            return
+        for pos in range(editor.count()):
+            if editor.itemData(pos) == value:
+                editor.setCurrentIndex(pos)
+                return
+
+    def setModelData(self, editor, model, index):
+        value = editor.currentData()
+        label = editor.currentText()
+        model.setData(index, value, Qt.EditRole)
+        model.setData(index, label, Qt.DisplayRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)
 
 
 class AutoLoginThread(QThread):
@@ -70,22 +112,22 @@ class AutoLoginThread(QThread):
 
         profile_path = self.account.profile_path
 
-        # вљ пёЏ РџР РћР’Р•Р РљРђ: РџСЂРѕС„РёР»СЊ Р”РћР›Р¶РµРќ Р±С‹С‚СЊ РёР· Р‘Р”!
+        # ⚠️ ПРОВЕРКА: Профиль ДОЛжеН быть из БД!
         if not profile_path:
-            self.status_signal.emit(f"[ERROR] РЈ Р°РєРєР°СѓРЅС‚Р° {self.account.name} РќР•Рў profile_path РІ Р‘Р”!")
-            self.finished_signal.emit(False, "РџСЂРѕС„РёР»СЊ РЅРµ СѓРєР°Р·Р°РЅ РІ Р‘Р”")
+            self.status_signal.emit(f"[ERROR] У аккаунта {self.account.name} НЕТ profile_path в БД!")
+            self.finished_signal.emit(False, "Профиль не указан в БД")
             return
 
-        self.status_signal.emit(f"[OK] РџСЂРѕС„РёР»СЊ РёР· Р‘Р]: {profile_path}")
+        self.status_signal.emit(f"[OK] Профиль РёР· Р'Р]: {profile_path}")
 
         if not profile_path.startswith("C:"):
             profile_path = f"C:/AI/yandex/{profile_path}"
-            self.status_signal.emit(f"[INFO] РџСѓС‚СЊ РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅ: {profile_path}")
+            self.status_signal.emit(f"[INFO] Путь преобразован: {profile_path}")
 
         accounts_file = Path("C:/AI/yandex/configs/accounts.json")
         if not accounts_file.exists():
-            self.status_signal.emit(f"[ERROR] Р¤Р°Р№Р» accounts.json РЅРµ РЅР°Р№РґРµРЅ!")
-            self.finished_signal.emit(False, "Р¤Р°Р№Р» accounts.json РЅРµ РЅР°Р№РґРµРЅ")
+            self.status_signal.emit(f"[ERROR] Файл accounts.json не найден!")
+            self.finished_signal.emit(False, "Файл accounts.json не найден")
             return
 
         with open(accounts_file, 'r', encoding='utf-8') as f:
@@ -97,19 +139,19 @@ class AutoLoginThread(QThread):
                     break
 
         if not account_info:
-            self.status_signal.emit(f"[ERROR] РђРєРєР°СѓРЅС‚ {self.account.name} РЅРµ РЅР°Р№РґРµРЅ РІ accounts.json!")
-            self.finished_signal.emit(False, f"РђРєРєР°СѓРЅС‚ РЅРµ РЅР°Р№РґРµРЅ РІ accounts.json")
+            self.status_signal.emit(f"[ERROR] Аккаунт {self.account.name} не найден в accounts.json!")
+            self.finished_signal.emit(False, f"Аккаунт не найден в accounts.json")
             return
 
-        self.status_signal.emit(f"[CDP] Р—Р°РїСѓСЃРє Р°РІС‚РѕР»РѕРіРёРЅР° РґР»СЏ {self.account.name}...")
+        self.status_signal.emit(f"[CDP] Запуск автологина для {self.account.name}...")
 
         secret_answer = self.secret_answer
         if not secret_answer and "secret" in account_info and account_info["secret"]:
             secret_answer = account_info["secret"]
-            self.status_signal.emit(f"[CDP] РќР°Р№РґРµРЅ СЃРѕС…СЂР°РЅРµРЅРЅС‹Р№ РѕС‚РІРµС‚ РЅР° СЃРµРєСЂРµС‚РЅС‹Р№ РІРѕРїСЂРѕСЃ")
+            self.status_signal.emit(f"[CDP] Найден сохраненный ответ на секретный вопрос")
 
         port = 9222 + (hash(self.account.name) % 100)
-        self.status_signal.emit(f"[CDP] РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РїРѕСЂС‚ {port} РґР»СЏ {self.account.name}")
+        self.status_signal.emit(f"[CDP] Используется порт {port} для {self.account.name}")
 
         smart_login = YandexSmartLogin()
         smart_login.status_update.connect(self.status_signal.emit)
@@ -121,9 +163,9 @@ class AutoLoginThread(QThread):
 
         proxy_to_use = account_info.get("proxy", None)
         if proxy_to_use:
-            self.status_signal.emit(f"[INFO] РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РїСЂРѕРєСЃРё: {proxy_to_use.split('@')[0]}@***")
+            self.status_signal.emit(f"[INFO] Используется прокси: {proxy_to_use.split('@')[0]}@***")
 
-        self.status_signal.emit(f"[SMART] Р—Р°РїСѓСЃРєР°СЋ Р°РІС‚РѕР»РѕРіРёРЅ...")
+        self.status_signal.emit(f"[SMART] Запускаю автологин...")
         success = await smart_login.login(
             account_name=self.account.name,
             profile_path=profile_path,
@@ -131,11 +173,11 @@ class AutoLoginThread(QThread):
         )
 
         if success:
-            self.status_signal.emit(f"[OK] РђРІС‚РѕР»РѕРіРёРЅ СѓСЃРїРµС€РµРЅ РґР»СЏ {self.account.name}!")
-            self.finished_signal.emit(True, "РђРІС‚РѕСЂРёР·Р°С†РёСЏ СѓСЃРїРµС€РЅР°")
+            self.status_signal.emit(f"[OK] Автологин успешен для {self.account.name}!")
+            self.finished_signal.emit(True, "Авторизация успешна")
         else:
-            self.status_signal.emit(f"[ERROR] РђРІС‚РѕР»РѕРіРёРЅ РЅРµ СѓРґР°Р»СЃСЏ РґР»СЏ {self.account.name}")
-            self.finished_signal.emit(False, "РћС€РёР±РєР° Р°РІС‚РѕСЂРёР·Р°С†РёРё")
+            self.status_signal.emit(f"[ERROR] Автологин не удался для {self.account.name}")
+            self.finished_signal.emit(False, "Ошибка авторизации")
 
 
 class LoginWorkerThread(QThread):
@@ -462,6 +504,7 @@ class AccountsTabExtended(QWidget):
             "Активность",  # Изменено с "Последнее использование"
             "Куки"  # Изменено с "Заметки" - для ручного ввода куков
         ])
+        self.table.setItemDelegateForColumn(PROFILE_SELECT_COLUMN, ProfileComboDelegate())
         
         # Обработчик двойного клика
         self.table.cellDoubleClicked.connect(self.on_table_double_click)
@@ -483,10 +526,11 @@ class AccountsTabExtended(QWidget):
         header.setSectionResizeMode(7, QHeaderView.Stretch)
         
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.table.itemDoubleClicked.connect(self.on_table_double_click)
+        self.table.itemChanged.connect(self._handle_item_changed)
         
         layout.addWidget(self.table)
         
@@ -549,28 +593,12 @@ class AccountsTabExtended(QWidget):
         
         self.log_action(f"Загружено: {len(self._accounts)} аккаунтов")
         
+        self.table.blockSignals(True)
         for row, account in enumerate(self._accounts):
             # Чекбокс
             checkbox = QCheckBox()
             checkbox.stateChanged.connect(self._update_buttons)
             self.table.setCellWidget(row, 0, checkbox)
-            
-            # Создаем комбобокс для выбора профиля
-            from PySide6.QtWidgets import QComboBox
-            profile_combo = QComboBox()
-            # Каждый аккаунт использует СВОЙ профиль - не смешиваем куки!
-            available_profiles = []
-            if account.name in ["dsmismirnov", "kuznepetya", "vfefyodorov", "volkovsvolkow", "semenovmsemionov"]:
-                available_profiles.append(f"{account.name} (основной)")
-            # Можем добавить wordstat_main как опцию, но НЕ по умолчанию
-            available_profiles.append("wordstat_main (общий - не рекомендуется)")
-            profile_combo.addItems(available_profiles)
-            
-            # Устанавливаем профиль самого аккаунта по умолчанию
-            profile_combo.setCurrentIndex(0)  # Профиль аккаунта
-            
-            # Сохраняем выбранный профиль при изменении
-            profile_combo.currentTextChanged.connect(lambda text: self._update_profile(account.id, text))
             
             # Данные аккаунта
             items = [
@@ -587,12 +615,44 @@ class AccountsTabExtended(QWidget):
             # Устанавливаем элементы
             for col, item in enumerate(items):
                 if item is not None:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     self.table.setItem(row, col + 1, item)
             
-            # Устанавливаем комбобокс
-            self.table.setCellWidget(row, 5, profile_combo)
+            profile_options = self._profile_options(account)
+            profile_value = self._profile_value_from_account(account)
+            profile_label = self._profile_label(profile_options, profile_value)
+            profile_item = QTableWidgetItem(profile_label)
+            profile_item.setData(Qt.EditRole, profile_value)
+            profile_item.setData(PROFILE_OPTIONS_ROLE, profile_options)
+            profile_item.setFlags(profile_item.flags() | Qt.ItemIsEditable)
+            self.table.setItem(row, PROFILE_SELECT_COLUMN, profile_item)
         
+        self.table.blockSignals(False)
         self._update_buttons()
+
+    def _profile_options(self, account):
+        """Сформировать список доступных профилей для аккаунта."""
+        options = [(account.name, f"{account.name} (личный)")]
+        if account.name != "wordstat_main":
+            options.append(("wordstat_main", "wordstat_main (общий)"))
+        return options
+
+    def _profile_value_from_account(self, account):
+        """Определить текущий профиль из пути аккаунта."""
+        if not account.profile_path:
+            return account.name
+        profile_name = Path(account.profile_path).name
+        if "wordstat_main" in profile_name:
+            return "wordstat_main"
+        return profile_name or account.name
+
+    @staticmethod
+    def _profile_label(options, value):
+        """Получить отображаемую подпись для значения профиля."""
+        for option_value, label in options:
+            if option_value == value:
+                return label
+        return value
     
     def _get_status_label(self, status):
         """Получить метку статуса"""
@@ -1479,20 +1539,30 @@ class AccountsTabExtended(QWidget):
                 "Для изменения куков откройте браузер с профилем wordstat_main\n"
                 "и войдите в Яндекс вручную или используйте кнопку 'Автологин'")
     
-    def _update_profile(self, account_id, profile_text):
+    def _update_profile(self, account_id, profile_key):
         """Обновить профиль для аккаунта"""
-        # Извлекаем имя профиля из текста
-        if "wordstat_main" in profile_text:
-            profile_name = "wordstat_main"
-        elif "(личный)" in profile_text:
-            profile_name = profile_text.split(" ")[0]
-        else:
-            profile_name = profile_text
-            
-        # Обновляем профиль в базе данных
+        profile_name = profile_key or "wordstat_main"
         profile_path = f"C:/AI/yandex/.profiles/{profile_name}"
         account_service.update_account(account_id, profile_path=profile_path)
         print(f"[Accounts] Профиль для аккаунта {account_id} изменен на {profile_name}")
+
+    def _handle_item_changed(self, item):
+        """Отслеживаем изменение профиля через делегат."""
+        if item.column() != PROFILE_SELECT_COLUMN or not self._accounts:
+            return
+        row = item.row()
+        if row < 0 or row >= len(self._accounts):
+            return
+        account = self._accounts[row]
+        profile_value = item.data(Qt.EditRole) or item.text()
+        options = self._profile_options(account)
+        label = self._profile_label(options, profile_value)
+        self.table.blockSignals(True)
+        item.setData(Qt.DisplayRole, label)
+        item.setText(label)
+        self.table.blockSignals(False)
+        account.profile_path = f"C:/AI/yandex/.profiles/{profile_value}"
+        self._update_profile(account.id, profile_value)
         
     def on_table_double_click(self, row, col):
         """Обработка двойного клика по таблице"""

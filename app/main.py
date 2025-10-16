@@ -1482,18 +1482,18 @@ class DeepTab(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SemTool — парсер Wordstat")
+        self.setWindowTitle("KeySet — парсер Wordstat")
         self.resize(1100, 700)
         
-        # Создаем свою иконку для SemTool (буквы ST на темном фоне)
+        # Создаем собственную иконку KeySet (буквы KS на темном фоне)
         from PySide6.QtGui import QPixmap, QIcon, QPainter, QFont, QColor
         pixmap = QPixmap(64, 64)
         pixmap.fill(QColor("#1e1e1e"))  # Темный фон
         
         painter = QPainter(pixmap)
         painter.setPen(QColor("#4CAF50"))  # Зеленый текст
-        painter.setFont(QFont("Arial", 28, QFont.Bold))
-        painter.drawText(pixmap.rect(), Qt.AlignCenter, "ST")
+        painter.setFont(QFont("Arial", 26, QFont.Bold))
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, "KS")
         painter.end()
         
         self.setWindowIcon(QIcon(pixmap))
@@ -1569,6 +1569,10 @@ class MainWindow(QMainWindow):
         self.parsing_tab = ParsingTab()
         
         tabs = QTabWidget()
+        tabs.setDocumentMode(False)
+        tabs.tabBar().setElideMode(Qt.ElideRight)
+        tabs.setMovable(False)
+        tabs.setTabsClosable(False)
         tabs.addTab(self.accounts_tab, "Аккаунты")
         tabs.addTab(self.parsing_tab, "📊 Парсинг")  # Новая единая вкладка
         tabs.addTab(self.prep_tab, "Подготовка фраз")
@@ -1605,7 +1609,7 @@ class MainWindow(QMainWindow):
         self.left_splitter = left_splitter
         
         # Восстанавливаем позицию сплиттеров из QSettings
-        settings = QSettings("SemTool", "SemTool")
+        settings = QSettings("KeySet", "KeySet")
         if settings.contains("main_splitter_state"):
             main_splitter.restoreState(settings.value("main_splitter_state"))
         if settings.contains("left_splitter_state"):
@@ -1647,7 +1651,7 @@ class MainWindow(QMainWindow):
         theme_action.triggered.connect(self._toggle_theme)
         
         # Загружаем сохраненную тему или используем светлую по умолчанию (файл 43)
-        self.settings = QSettings("SemTool", "SemTool")
+        self.settings = QSettings("KeySet", "KeySet")
         self.is_dark_theme = self.settings.value("dark_theme", False, type=bool)
         self._apply_theme(self.is_dark_theme)
         
@@ -1656,7 +1660,7 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Сохранение состояния сплиттеров при закрытии (файл 42)"""
-        settings = QSettings("SemTool", "SemTool")
+        settings = QSettings("KeySet", "KeySet")
         settings.setValue("main_splitter_state", self.main_splitter.saveState())
         settings.setValue("left_splitter_state", self.left_splitter.saveState())
         super().closeEvent(event)
@@ -1664,7 +1668,7 @@ class MainWindow(QMainWindow):
     def _save_log(self):
         """Сохранить журнал в файл"""
         from PySide6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getSaveFileName(self, "Сохранить журнал", "semtool.log", "Log (*.log);;Text (*.txt)")
+        path, _ = QFileDialog.getSaveFileName(self, "Сохранить журнал", "keyset.log", "Log (*.log);;Text (*.txt)")
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.log_widget.toPlainText())
@@ -1766,7 +1770,7 @@ class MainWindow(QMainWindow):
             self.update_status(f"Загружено: {count} аккаунтов")
             
             # Логируем успешный запуск
-            self.log_message(f"SemTool запущен, загружено {count} аккаунтов", "INFO")
+            self.log_message(f"KeySet запущен, загружено {count} аккаунтов", "INFO")
             self.log_message("Orange Light дизайн-система активна", "INFO")
         except Exception as e:
             self.update_status(f"Ошибка загрузки: {str(e)}")
@@ -1845,7 +1849,7 @@ def main() -> None:
     app.setStyle("Fusion")
     
     # Применяем темную тему из файла 46
-    qss_file = Path(__file__).parent.parent / "styles" / "semtool_dark.qss"
+    qss_file = Path(__file__).parent.parent / "styles" / "keyset_dark.qss"
     if qss_file.exists():
         with open(qss_file, 'r', encoding='utf-8') as f:
             app.setStyleSheet(f.read())

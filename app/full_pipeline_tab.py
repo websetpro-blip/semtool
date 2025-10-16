@@ -301,7 +301,7 @@ class FullPipelineTab(QWidget):
         )
         
         if filename:
-            with open(filename, "w", encoding="utf-8", newline="") as f:
+            with open(filename, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.writer(f, delimiter=";")
                 writer.writerow([
                     "Фраза", "Частотность", "CPC", "Показы", "Бюджет", 

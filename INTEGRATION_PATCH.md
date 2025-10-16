@@ -1,11 +1,11 @@
-# Патч для интеграции сессий в semtool
+# Патч для интеграции сессий в keyset
 
 ## Что добавлено:
 
 ### 1. Новые модули:
-- `semtool/services/sessions.py` - управление сессиями
-- `semtool/workers/session_frequency_runner.py` - парсер с сессиями
-- `semtool/app/sessions_tab.py` - UI вкладка
+- `keyset/services/sessions.py` - управление сессиями
+- `keyset/workers/session_frequency_runner.py` - парсер с сессиями
+- `keyset/app/sessions_tab.py` - UI вкладка
 
 ### 2. Изменения в main.py:
 

@@ -67,13 +67,13 @@ scripts\start_chrome_cdp.bat .profiles\cdp1 "http://user:pass@ip:port" 9222
 3. Залогинься в Яндекс
 4. **НЕ ЗАКРЫВАЙ ОКНО!**
 
-### ШАГ 3: Парсить через SemTool
+### ШАГ 3: Парсить через KeySet
 
 **TODO:** Добавить в UI вкладку "CDP Парсинг" или кнопку в "Сбор частотности"
 
 **Пока через код:**
 ```python
-from semtool.workers.cdp_frequency_runner import parse_with_cdp
+from keyset.workers.cdp_frequency_runner import parse_with_cdp
 
 masks = ["ремонт квартир", "купить квартиру", ...]
 

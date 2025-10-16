@@ -1,8 +1,8 @@
-# 🚀 SemTool - Full Pipeline Edition
+# 🚀 KeySet - Full Pipeline Edition
 
 **Массовый парсинг Wordstat + Direct + Кластеризация**
 
-[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/websetpro-blip/semtool)
+[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/websetpro-blip/keyset)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-Open%20Source-brightgreen.svg)](LICENSE)
 
@@ -10,7 +10,7 @@
 
 ## 🎯 Что это?
 
-**SemTool** - это полный цикл анализа семантики для SEO:
+**KeySet** - это полный цикл анализа семантики для SEO:
 
 ```
 Маски → Wordstat → Direct → Clustering → CSV
@@ -32,15 +32,15 @@
 
 ### 1. Клонируй и установи:
 ```powershell
-git clone https://github.com/websetpro-blip/semtool.git
-cd semtool
+git clone https://github.com/websetpro-blip/keyset.git
+cd keyset
 pip install -r requirements.txt
 python -c "import nltk; nltk.download('stopwords')"
 ```
 
 ### 2. Запусти GUI:
 ```powershell
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 ### 3. Используй Full Pipeline:
@@ -76,7 +76,7 @@ python -m semtool.app.main
 ## 📁 Структура проекта
 
 ```
-semtool/
+keyset/
 ├── app/                    # Qt GUI интерфейс
 │   ├── main.py            # Главное окно
 │   ├── full_pipeline_tab.py  # Full Pipeline (НОВОЕ!)
@@ -92,7 +92,7 @@ semtool/
 │   ├── db.py              # SQLite WAL (НОВОЕ!)
 │   └── models.py          # SQLAlchemy модели
 └── data/                  # Данные
-    ├── semtool.db         # База WAL режим
+    ├── keyset.db         # База WAL режим
     └── example_phrases.txt # Тестовые фразы
 ```
 
@@ -176,9 +176,9 @@ sqlalchemy==2.0.36
 
 ## 🔗 Ссылки
 
-- **Репозиторий:** https://github.com/websetpro-blip/semtool
-- **Issues:** https://github.com/websetpro-blip/semtool/issues
-- **Discussions:** https://github.com/websetpro-blip/semtool/discussions
+- **Репозиторий:** https://github.com/websetpro-blip/keyset
+- **Issues:** https://github.com/websetpro-blip/keyset/issues
+- **Discussions:** https://github.com/websetpro-blip/keyset/discussions
 
 ---
 

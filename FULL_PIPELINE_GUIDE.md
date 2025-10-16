@@ -31,7 +31,7 @@ PySide6
 
 ### Проверка:
 ```powershell
-cd C:\AI\yandex\semtool
+cd C:\AI\yandex\keyset
 python -c "from services.frequency import parse_batch_wordstat; from services.direct import forecast_batch_direct; from nltk.stem.snowball import SnowballStemmer; print('All OK!')"
 ```
 
@@ -47,7 +47,7 @@ python -c "import nltk; nltk.download('stopwords', quiet=True)"
 
 ### Шаг 1: Обновите код
 ```powershell
-cd C:\AI\yandex\semtool
+cd C:\AI\yandex\keyset
 
 # Закройте GUI если открыт
 Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -79,7 +79,7 @@ python -c "import nltk; nltk.download('stopwords', quiet=True); print('NLTK read
 
 ### Шаг 3: Запустите GUI
 ```powershell
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 **Должна появиться новая вкладка:** 🚀 Full Pipeline
@@ -253,7 +253,7 @@ Remove-Item -Recurse -Force workers/__pycache__
 git pull origin main
 
 # 4. Перезапустите
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 ---
@@ -261,7 +261,7 @@ python -m semtool.app.main
 ### Проблема: "ImportError: attempted relative import"
 Это нормально! Запускайте через модуль:
 ```powershell
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 **НЕ запускайте напрямую:** `python app/main.py` ❌
@@ -322,7 +322,7 @@ Direct API может быть недоступен. Pipeline используе
 
 ## 📚 ДОПОЛНИТЕЛЬНЫЕ МАТЕРИАЛЫ:
 
-- **UPDATE_INSTRUCTIONS.md** - как обновить SemTool
+- **UPDATE_INSTRUCTIONS.md** - как обновить KeySet
 - **GITHUB_WORKFLOW.md** - работа с Git
 - **README.md** - общая информация о проекте
 
@@ -330,7 +330,7 @@ Direct API может быть недоступен. Pipeline используе
 
 ## 🔗 РЕПОЗИТОРИЙ:
 
-**GitHub:** https://github.com/websetpro-blip/semtool
+**GitHub:** https://github.com/websetpro-blip/keyset
 
 **Коммиты Full Pipeline:**
 - `c49e4e9` - feat: add Full Pipeline tab
@@ -354,6 +354,6 @@ Direct API может быть недоступен. Pipeline используе
 
 ## 🎉 ГОТОВО К ИСПОЛЬЗОВАНИЮ!
 
-Теперь у вас есть полноценный KeyCollector-like инструмент в SemTool!
+Теперь у вас есть полноценный KeyCollector-like инструмент в KeySet!
 
 **Приятного парсинга! 🚀**

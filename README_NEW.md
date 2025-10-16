@@ -1,4 +1,4 @@
-﻿# SemTool - Парсер Яндекс.Wordstat
+﻿# KeySet - Парсер Яндекс.Wordstat
 
 ## 🚀 Быстрый старт
 
@@ -11,8 +11,8 @@
 
 1. Клонировать репозиторий:
 ```bash
-git clone https://github.com/websetpro-blip/semtool.git
-cd semtool
+git clone https://github.com/websetpro-blip/keyset.git
+cd keyset
 ```
 
 2. Установить зависимости:
@@ -22,13 +22,13 @@ pip install -r requirements.txt
 
 3. Запустить приложение:
 ```bash
-python run_semtool.pyw
+python run_keyset.pyw
 ```
 
 ## 📁 Структура проекта
 
 ```
-semtool/
+keyset/
 ├── app/           # GUI интерфейс
 ├── services/      # Бизнес-логика
 ├── workers/       # Парсеры и воркеры
@@ -47,7 +47,7 @@ semtool/
 
 ## 🔧 Конфигурация
 
-Аккаунты хранятся в `data/semtool.db` (SQLite).
+Аккаунты хранятся в `data/keyset.db` (SQLite).
 
 ## 📝 Лицензия
 

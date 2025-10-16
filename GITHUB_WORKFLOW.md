@@ -10,7 +10,7 @@
 
 1. **Проверь статус:**
 ```bash
-cd C:\AI\yandex\semtool
+cd C:\AI\yandex\keyset
 git status
 ```
 
@@ -86,7 +86,7 @@ secrets/
 ## 🚀 БЫСТРАЯ КОМАНДА
 
 ```bash
-cd C:\AI\yandex\semtool; git add .; git commit -m "тип: описание
+cd C:\AI\yandex\keyset; git add .; git commit -m "тип: описание
 
 Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>"; git push origin main
 ```
@@ -95,6 +95,6 @@ Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.g
 
 ## 📊 РЕПОЗИТОРИЙ
 
-**GitHub:** https://github.com/websetpro-blip/semtool
+**GitHub:** https://github.com/websetpro-blip/keyset
 
 **Помни:** Код без коммита = потерянная работа!

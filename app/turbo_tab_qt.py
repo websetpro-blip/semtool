@@ -130,7 +130,7 @@ class ParserWorkerThread(QThread):
             # Экспорт в CSV
             csv_path = Path("data") / "results.csv"
             csv_path.parent.mkdir(exist_ok=True)
-            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
                 if clustered:
                     writer = csv.DictWriter(f, fieldnames=clustered[0].keys())
                     writer.writeheader()
@@ -490,7 +490,7 @@ class TurboParserTab(QWidget):
         if filename:
             import csv
             
-            with open(filename, "w", encoding="utf-8", newline="") as f:
+            with open(filename, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.writer(f, delimiter=";")
                 writer.writerow(["Фраза", "Частотность", "Регион", "Время"])
                 

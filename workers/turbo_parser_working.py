@@ -1,6 +1,6 @@
 """
 РАБОЧИЙ ТУРБО ПАРСЕР - 526.3 фраз/мин
-Адаптирован из turbo_parser_10tabs.py для интеграции с SemTool GUI
+Адаптирован из turbo_parser_10tabs.py для интеграции с KeySet GUI
 """
 
 import asyncio

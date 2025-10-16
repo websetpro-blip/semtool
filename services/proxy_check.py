@@ -15,7 +15,7 @@ async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, A
     
     Args:
         proxy_url: URL прокси в формате:
-            - ip:port@user:pass (SemTool формат)
+            - ip:port@user:pass (KeySet формат)
             - http://user:pass@ip:port (стандартный URL)
             - socks5://user:pass@ip:port (SOCKS прокси)
         timeout: Таймаут в секундах
@@ -43,7 +43,7 @@ async def test_proxy(proxy_url: Optional[str], timeout: int = 10) -> Dict[str, A
         proxy_auth = None
         is_socks = False
         
-        # Формат: ip:port@user:pass (из SemTool)
+        # Формат: ip:port@user:pass (из KeySet)
         if '@' in proxy_url and not proxy_url.startswith('http') and not proxy_url.startswith('socks'):
             parts = proxy_url.split('@')
             if len(parts) == 2:

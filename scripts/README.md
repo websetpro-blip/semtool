@@ -1,15 +1,15 @@
-# Скрипты запуска SemTool
+# Скрипты запуска KeySet
 
-Эта папка содержит вспомогательные скрипты для запуска и отладки SemTool.
+Эта папка содержит вспомогательные скрипты для запуска и отладки KeySet.
 
 ## Файлы
 
 ### RUN_SEMTOOL.bat
-**Основной скрипт запуска SemTool**
+**Основной скрипт запуска KeySet**
 
 Использует Python из виртуального окружения `C:\AI\.venv\Scripts\python.exe`
 
-Запускает SemTool из правильной директории для корректной работы импортов.
+Запускает KeySet из правильной директории для корректной работы импортов.
 
 **Запуск:**
 ```cmd
@@ -37,19 +37,19 @@ scripts\RUN_SEMTOOL_DEBUG.bat
 ### create_shortcut.vbs
 **VBS скрипт для создания ярлыка на рабочем столе**
 
-Создает ярлык `SemTool.lnk` на рабочем столе, который запускает `RUN_SEMTOOL.bat`
+Создает ярлык `KeySet.lnk` на рабочем столе, который запускает `RUN_SEMTOOL.bat`
 
 **Запуск:**
 ```cmd
 cscript scripts\create_shortcut.vbs
 ```
 
-### test_semtool_startup.py
+### test_keyset_startup.py
 **Тестовый скрипт для проверки запуска**
 
 Проверяет каждый этап инициализации:
 1. Импорты PySide6
-2. Импорты semtool.core.db
+2. Импорты keyset.core.db
 3. Инициализация схемы БД
 4. Создание DB сессии
 5. Импорт MainWindow
@@ -59,7 +59,7 @@ cscript scripts\create_shortcut.vbs
 
 **Запуск:**
 ```cmd
-python scripts\test_semtool_startup.py
+python scripts\test_keyset_startup.py
 ```
 
 ## Использование
@@ -70,10 +70,10 @@ python scripts\test_semtool_startup.py
 2. Или использовать ярлык на рабочем столе (создается через `create_shortcut.vbs`)
 
 ### Отладка проблем
-Если SemTool не запускается или зависает:
+Если KeySet не запускается или зависает:
 1. Запустить `RUN_SEMTOOL_DEBUG.bat`
 2. Посмотреть на какой стадии произошла ошибка
-3. Или запустить `test_semtool_startup.py` для детальной диагностики
+3. Или запустить `test_keyset_startup.py` для детальной диагностики
 
 ## Требования
 

@@ -1,4 +1,4 @@
-# 🚀 БЫСТРЫЙ СТАРТ - SemTool Full Pipeline
+# 🚀 БЫСТРЫЙ СТАРТ - KeySet Full Pipeline
 
 **За 5 минут до первого запуска!**
 
@@ -7,7 +7,7 @@
 ## ⚡ ШАГ 1: Обновите код (30 сек)
 
 ```powershell
-cd C:\AI\yandex\semtool
+cd C:\AI\yandex\keyset
 
 # Закройте GUI если открыт
 Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -37,7 +37,7 @@ python -c "import nltk; nltk.download('stopwords', quiet=True); print('✓ NLTK 
 ## ⚡ ШАГ 3: Запустите GUI (5 сек)
 
 ```powershell
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 **Должна появиться вкладка:** 🚀 Full Pipeline
@@ -97,7 +97,7 @@ python -m pip install nltk==3.9.1
 ```powershell
 # Перезапустите GUI
 Get-Process python | Stop-Process -Force
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 ### "Парсинг не запускается"

@@ -4,10 +4,10 @@
 
 ✅ ЯРЛЫК НА РАБОЧЕМ СТОЛЕ
 
-Ярлык "SemTool" создан на вашем рабочем столе.
+Ярлык "KeySet" создан на вашем рабочем столе.
 
 Запуск:
-  → Двойной клик по ярлыку "SemTool" на рабочем столе
+  → Двойной клик по ярлыку "KeySet" на рабочем столе
   → Программа откроется БЕЗ окна терминала
   → Только GUI окно приложения
 
@@ -15,8 +15,8 @@
 
 📁 ФАЙЛЫ ПРОЕКТА:
 
-C:\AI\yandex\semtool\
-  ├── run_semtool.pyw              ← Запуск без терминала
+C:\AI\yandex\keyset\
+  ├── run_keyset.pyw              ← Запуск без терминала
   ├── create_desktop_shortcut.ps1  ← Скрипт создания ярлыка
   └── app\main.py                  ← Главное окно приложения
 
@@ -27,7 +27,7 @@ C:\AI\yandex\semtool\
 Если ярлык удален или не работает:
 
 PowerShell:
-  cd C:\AI\yandex\semtool
+  cd C:\AI\yandex\keyset
   .\create_desktop_shortcut.ps1
 
 ═══════════════════════════════════════════════════════════════
@@ -35,11 +35,11 @@ PowerShell:
 🚀 АЛЬТЕРНАТИВНЫЙ ЗАПУСК:
 
 1. БЕЗ терминала (тихий режим):
-   python C:\AI\yandex\semtool\run_semtool.pyw
+   python C:\AI\yandex\keyset\run_keyset.pyw
 
 2. С терминалом (для отладки):
    cd C:\AI\yandex
-   python -m semtool.app.main
+   python -m keyset.app.main
 
 ═══════════════════════════════════════════════════════════════
 
@@ -53,6 +53,6 @@ PowerShell:
 ═══════════════════════════════════════════════════════════════
 
 📝 GITHUB:
-https://github.com/websetpro-blip/semtool
+https://github.com/websetpro-blip/keyset
 
 ═══════════════════════════════════════════════════════════════

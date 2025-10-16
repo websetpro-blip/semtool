@@ -3,14 +3,14 @@
 ## ✅ ЧТО СДЕЛАНО
 
 1. **Создан рабочий модуль парсера**
-   - Файл: `C:\AI\yandex\semtool\workers\turbo_parser_working.py`
+   - Файл: `C:\AI\yandex\keyset\workers\turbo_parser_working.py`
    - Функция: `parse_wordstat(phrases, log_callback=None)`
    - Скорость: **526.3 фраз/мин**
    - Основан на проверенном коде из `C:\AI\turbo_parser_10tabs.py`
 
 2. **Интегрирован в GUI**
-   - Обновлён файл: `C:\AI\yandex\semtool\app\turbo_tab_qt.py`
-   - Резервная копия: `C:\AI\yandex\semtool\app\turbo_tab_qt.py.backup`
+   - Обновлён файл: `C:\AI\yandex\keyset\app\turbo_tab_qt.py`
+   - Резервная копия: `C:\AI\yandex\keyset\app\turbo_tab_qt.py.backup`
    - Класс `ParserWorkerThread` теперь использует рабочий парсер
 
 3. **Метод работы**
@@ -29,10 +29,10 @@ start chrome.exe --user-data-dir="C:\AI\yandex\.profiles\wordstat_main"
 # Зайди на wordstat.yandex.ru и убедись что вошёл под аккаунтом
 ```
 
-### Шаг 2: Запусти SemTool
+### Шаг 2: Запусти KeySet
 
 ```powershell
-cd C:\AI\yandex\semtool
+cd C:\AI\yandex\keyset
 python -m app.main
 ```
 
@@ -146,8 +146,8 @@ playwright install chromium
 
 ```powershell
 # Восстанови из резервной копии
-Copy-Item "C:\AI\yandex\semtool\app\turbo_tab_qt.py.backup" `
-          "C:\AI\yandex\semtool\app\turbo_tab_qt.py" -Force
+Copy-Item "C:\AI\yandex\keyset\app\turbo_tab_qt.py.backup" `
+          "C:\AI\yandex\keyset\app\turbo_tab_qt.py" -Force
 ```
 
 ## 🎯 СЛЕДУЮЩИЕ ШАГИ
@@ -155,7 +155,7 @@ Copy-Item "C:\AI\yandex\semtool\app\turbo_tab_qt.py.backup" `
 1. ✅ **Протестировать на 50 фразах** - проверить что всё работает
 2. ⏳ **CDP Multi-Worker** - добавить поддержку нескольких Chrome (3-5)
 3. ⏳ **Автологин** - интегрировать автоматический вход для всех аккаунтов
-4. ⏳ **Сохранение в БД** - автоматическое сохранение в `semtool.db`
+4. ⏳ **Сохранение в БД** - автоматическое сохранение в `keyset.db`
 5. ⏳ **Прогресс бар** - визуальный прогресс в GUI
 
 ## 📞 ТЕСТИРОВАНИЕ

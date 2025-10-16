@@ -9,7 +9,7 @@ DATA_DIR = BASE_DIR / "data"
 if not DATA_DIR.exists():
     DATA_DIR = BASE_DIR.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DATA_DIR / "semtool.db"
+DB_PATH = DATA_DIR / "keyset.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (

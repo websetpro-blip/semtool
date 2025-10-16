@@ -21,7 +21,7 @@ try:
 except ImportError:
     # Если запускается отдельно
     import sys
-    sys.path.insert(0, "C:/AI/yandex/semtool")
+    sys.path.insert(0, "C:/AI/yandex/keyset")
     from core import proxy_store
 
 from ..services import accounts as account_service

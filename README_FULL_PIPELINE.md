@@ -1,4 +1,4 @@
-# 🚀 SemTool - Full Pipeline Edition
+# 🚀 KeySet - Full Pipeline Edition
 
 **Массовый парсинг Wordstat + Direct + Кластеризация**
 
@@ -8,7 +8,7 @@
 
 ## 🎯 Что это?
 
-**SemTool Full Pipeline** - это полный цикл анализа семантики:
+**KeySet Full Pipeline** - это полный цикл анализа семантики:
 
 ```
 Маски → Wordstat → Direct → Clustering → CSV
@@ -26,15 +26,15 @@
 
 ```powershell
 # 1. Клонируй или обнови
-git clone https://github.com/websetpro-blip/semtool.git
-cd semtool
+git clone https://github.com/websetpro-blip/keyset.git
+cd keyset
 
 # 2. Установи зависимости
 pip install -r requirements.txt
 python -c "import nltk; nltk.download('stopwords')"
 
 # 3. Запусти
-python -m semtool.app.main
+python -m keyset.app.main
 
 # 4. Открой вкладку "🚀 Full Pipeline"
 ```
@@ -144,8 +144,8 @@ sqlalchemy==2.0.36
 
 ```powershell
 # 1. Клонирование
-git clone https://github.com/websetpro-blip/semtool.git
-cd semtool
+git clone https://github.com/websetpro-blip/keyset.git
+cd keyset
 
 # 2. Виртуальное окружение (опционально)
 python -m venv .venv
@@ -161,7 +161,7 @@ python -c "import nltk; nltk.download('stopwords')"
 playwright install chromium
 
 # 6. Запуск
-python -m semtool.app.main
+python -m keyset.app.main
 ```
 
 ---
@@ -210,9 +210,9 @@ Open Source - используй свободно!
 
 ## 🔗 Ссылки
 
-- **GitHub:** https://github.com/websetpro-blip/semtool
-- **Issues:** https://github.com/websetpro-blip/semtool/issues
-- **Discussions:** https://github.com/websetpro-blip/semtool/discussions
+- **GitHub:** https://github.com/websetpro-blip/keyset
+- **Issues:** https://github.com/websetpro-blip/keyset/issues
+- **Discussions:** https://github.com/websetpro-blip/keyset/discussions
 
 ---
 
@@ -242,7 +242,7 @@ Open Source - используй свободно!
 
 ## 📧 Контакты
 
-Вопросы и предложения: [GitHub Issues](https://github.com/websetpro-blip/semtool/issues)
+Вопросы и предложения: [GitHub Issues](https://github.com/websetpro-blip/keyset/issues)
 
 ---
 

@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   SemTool - Wordstat Parser
+echo   KeySet - Wordstat Parser
 echo ========================================
 echo.
 echo Запуск из: C:\AI\yandex
@@ -16,13 +16,13 @@ if not exist "C:\AI\.venv\Scripts\python.exe" (
     exit /b 1
 )
 
-echo Запуск SemTool...
+echo Запуск KeySet...
 echo.
-"C:\AI\.venv\Scripts\python.exe" -m semtool.app.main
+"C:\AI\.venv\Scripts\python.exe" -m keyset.app.main
 
 if errorlevel 1 (
     echo.
-    echo ОШИБКА при запуске SemTool!
+    echo ОШИБКА при запуске KeySet!
     echo Код ошибки: %errorlevel%
     pause
     exit /b %errorlevel%

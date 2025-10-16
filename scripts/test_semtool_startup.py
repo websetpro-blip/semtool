@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Test SemTool startup to find where it hangs"""
+"""Test KeySet startup to find where it hangs"""
 import sys
 print("1. Starting test...")
 
@@ -7,8 +7,8 @@ print("2. Importing PySide6...")
 from PySide6.QtWidgets import QApplication
 print("   OK")
 
-print("3. Importing semtool.core.db...")
-from semtool.core.db import Base, engine, ensure_schema, SessionLocal
+print("3. Importing keyset.core.db...")
+from keyset.core.db import Base, engine, ensure_schema, SessionLocal
 print("   OK")
 
 print("4. Ensuring schema...")
@@ -21,7 +21,7 @@ with SessionLocal() as session:
 print("   OK")
 
 print("6. Importing main module...")
-from semtool.app.main import MainWindow
+from keyset.app.main import MainWindow
 print("   OK")
 
 print("7. Creating QApplication...")
@@ -32,5 +32,5 @@ print("8. Creating MainWindow...")
 window = MainWindow()
 print("   OK")
 
-print("\n✅ ALL TESTS PASSED - SemTool should start normally")
+print("\n✅ ALL TESTS PASSED - KeySet should start normally")
 print("If it hangs after this, the problem is in window.show() or app.exec()")

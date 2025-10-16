@@ -1,4 +1,4 @@
-/* ===== SemTool Beige-Gold Theme (файл 44 дизайн-система) ===== */
+/* ===== KeySet Beige-Gold Theme (файл 44 дизайн-система) ===== */
 /* Квадратные кнопки (r=6px), беж-золотая окантовка, тёплые цвета */
 /* Исправления из файла 44: кнопки 32/36/40px, единая окантовка */
 
@@ -611,4 +611,33 @@ QPlainTextEdit#log_widget {
     font-size: 13px;
     color: #0F172A;
     padding: 8px;
+}
+
+/* === Compact adjustments (KeySet task 47) === */
+QPushButton {
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 6px;
+}
+
+QTabBar::tab {
+    height: 28px;
+    padding: 0 12px;
+    margin: 0 4px;
+    border-radius: 6px;
+}
+
+QTabBar::tab:selected {
+    background: #FFD659;
+    border: 1px solid #E4B54A;
+}
+
+QLineEdit,
+QTextEdit,
+QComboBox,
+QSpinBox {
+    min-height: 28px;
+    border: 1px solid #D9D9D9;
+    border-radius: 6px;
+    background: #FFFFFF;
 }

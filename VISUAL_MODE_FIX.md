@@ -46,8 +46,8 @@ python C:\AI\yandex\test_single_browser.py
 python C:\AI\yandex\test_visual_parser.py
 ```
 
-### В SemTool:
-1. Запустите SemTool
+### В KeySet:
+1. Запустите KeySet
 2. Перейдите на "⚡ Турбо Парсер"
 3. Настройте:
    - ✅ Визуальный режим

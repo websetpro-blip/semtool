@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any
-import time
 
 from sqlalchemy import select
 
 from ..core.db import SessionLocal
 from ..core.models import Account
+from ..utils.text_fix import fix_mojibake
 
 # Для проверки прокси и автологина
 try:
@@ -31,11 +31,20 @@ def _auto_refresh(session):
     session.commit()
 
 
+def _sanitize_account(account: Account) -> Account:
+    account.name = fix_mojibake(account.name)
+    account.profile_path = fix_mojibake(account.profile_path)
+    account.proxy = fix_mojibake(account.proxy)
+    account.notes = fix_mojibake(account.notes)
+    account.status = fix_mojibake(account.status)
+    return account
+
+
 def list_accounts() -> list[Account]:
     with SessionLocal() as session:
         _auto_refresh(session)
         result = session.execute(select(Account).order_by(Account.name))
-        return list(result.scalars())
+        return [_sanitize_account(acc) for acc in result.scalars()]
 
 
 def create_account(name: str, profile_path: str, proxy: str | None = None, notes: str | None = None) -> Account:
@@ -44,7 +53,7 @@ def create_account(name: str, profile_path: str, proxy: str | None = None, notes
         session.add(account)
         session.commit()
         session.refresh(account)
-        return account
+        return _sanitize_account(account)
 
 
 def upsert_account(name: str, profile_path: str, proxy: str | None = None, notes: str | None = None) -> Account:
@@ -57,12 +66,12 @@ def upsert_account(name: str, profile_path: str, proxy: str | None = None, notes
             existing.notes = notes
             session.commit()
             session.refresh(existing)
-            return existing
+            return _sanitize_account(existing)
         account = Account(name=name, profile_path=profile_path, proxy=proxy or None, notes=notes)
         session.add(account)
         session.commit()
         session.refresh(account)
-        return account
+        return _sanitize_account(account)
 
 
 def update_account(account_id: int, **fields) -> Account:
@@ -75,7 +84,7 @@ def update_account(account_id: int, **fields) -> Account:
                 setattr(account, key, value)
         session.commit()
         session.refresh(account)
-        return account
+        return _sanitize_account(account)
 
 
 def delete_account(account_id: int) -> None:
@@ -100,7 +109,7 @@ def set_status(account_id: int, status: str, *, cooldown_minutes: int | None = N
             account.captcha_tries = (account.captcha_tries or 0) + 1
         session.commit()
         session.refresh(account)
-        return account
+        return _sanitize_account(account)
 
 
 def mark_captcha(account_id: int, minutes: int = 30) -> Account:
@@ -129,7 +138,7 @@ def update_account_proxy(account_name: str, proxy: str | None) -> Account:
         account.proxy = proxy
         session.commit()
         session.refresh(account)
-        return account
+        return _sanitize_account(account)
 
 
 # ========== НОВЫЕ ФУНКЦИИ ИЗ ФАЙЛА 42 ==========

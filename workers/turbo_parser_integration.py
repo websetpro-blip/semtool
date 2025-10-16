@@ -1,6 +1,6 @@
 """
 ТУРБО ПАРСЕР ИНТЕГРАЦИЯ ДЛЯ SEMTOOL
-Интегрирует наш парсер 195.9 фраз/мин в SemTool
+Интегрирует наш парсер 195.9 фраз/мин в KeySet
 Основан на parser_final_130plus.py + рекомендации GPT
 """
 
@@ -67,7 +67,7 @@ class TurboWordstatParser:
         self.num_tabs = 1  # количество вкладок для стабильной работы
         self.num_browsers = 1  # количество видимых браузеров
         self.visual_manager = None  # Менеджер визуальных браузеров
-        self.db_path = Path("C:/AI/yandex/semtool/data/semtool.db")
+        self.db_path = Path("C:/AI/yandex/keyset/data/keyset.db")
         self.auth_handler = AutoAuthHandler()  # Обработчик авторизации
         
         # Загружаем данные авторизации из accounts.json если нет в аккаунте
@@ -82,7 +82,7 @@ class TurboWordstatParser:
     def _load_auth_data(self):
         """Загружаем данные авторизации из accounts.json"""
         try:
-            accounts_json_path = Path("C:/AI/yandex/semtool/configs/accounts.json")
+            accounts_json_path = Path("C:/AI/yandex/keyset/configs/accounts.json")
             if not accounts_json_path.exists():
                 accounts_json_path = Path("C:/AI/yandex/configs/accounts.json")
             if not accounts_json_path.exists():
@@ -570,7 +570,7 @@ class TurboWordstatParser:
         return all_results
     
     async def save_to_db(self, results: List[Dict]):
-        """Сохранение результатов в БД SemTool"""
+        """Сохранение результатов в БД KeySet"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -641,10 +641,10 @@ class PhraseClusterer:
         pass
 
 
-# Главная функция для интеграции в SemTool
+# Главная функция для интеграции в KeySet
 async def run_turbo_parser(queries: List[str], account: Optional[Account] = None, headless: bool = False):
     """
-    Запуск турбо парсера из GUI SemTool
+    Запуск турбо парсера из GUI KeySet
     
     Args:
         queries: список фраз для парсинга

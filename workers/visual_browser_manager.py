@@ -1,7 +1,7 @@
 """
 Visual Browser Manager - CORRECTED
 Uses 5 working profiles (NOT wordstat_main!)
-According to semtool дорожная карта.md
+According to keyset дорожная карта.md
 """
 
 import asyncio
@@ -32,7 +32,7 @@ class BrowserInstance:
 class VisualBrowserManager:
     """Manager for multiple Chrome browsers with working profiles"""
     
-    # CORRECT CONFIGURATION from semtool дорожная карта.md
+    # CORRECT CONFIGURATION from keyset дорожная карта.md
     CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
     # 5 WORKING PROFILES (NOT wordstat_main!)
     AUTHORIZED_PROFILES = [

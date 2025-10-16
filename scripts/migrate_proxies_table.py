@@ -11,11 +11,11 @@ def migrate():
     """Создать таблицу proxies"""
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
-    db_path = project_root / "data" / "semtool.db"
+    db_path = project_root / "data" / "keyset.db"
     
     if not db_path.exists():
         print(f"[ERROR] База данных не найдена: {db_path}")
-        db_path = Path("C:/AI/yandex/semtool/data/semtool.db")
+        db_path = Path("C:/AI/yandex/keyset/data/keyset.db")
         if not db_path.exists():
             print(f"[ERROR] БД не найдена и там: {db_path}")
             return False
