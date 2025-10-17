@@ -1,16 +1,18 @@
 from __future__ import annotations
-
+import json
+import os
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import select, update, delete
 
 from ..core.db import SessionLocal
 from ..core.models import Account
 from ..utils.text_fix import fix_mojibake
 
-# Для проверки прокси и автологина
+# Optional async deps
 try:
     import aiohttp
     import asyncio
@@ -19,251 +21,305 @@ try:
 except ImportError:
     ASYNC_AVAILABLE = False
 
+RUNTIME_DIR = Path("runtime")
+RUNTIME_ACCOUNTS = RUNTIME_DIR / "runtimeaccounts.json"
 
-def _auto_refresh(session):
+COOKIE_STATUS_OK = "ok"
+COOKIE_STATUS_EMPTY = "empty"
+COOKIE_STATUS_EXPIRED = "expired"
+
+PROXY_OK = "ok"
+PROXY_BAD = "bad"
+
+
+@dataclass
+class AccountDTO:
+    id: Optional[int] = None
+    name: str = ""
+    login: str = ""
+    password: str = ""
+    profile_path: str = ""
+    proxy: Optional[str] = None
+    secrets: Dict[str, Any] = field(default_factory=dict)
+    cookies: Dict[str, Any] = field(default_factory=dict)
+    cookie_status: str = COOKIE_STATUS_EMPTY
+    status: str = COOKIE_STATUS_OK
+    cooldown_until: Optional[datetime] = None
+    captcha_tries: int = 0
+
+    @staticmethod
+    def from_model(acc: Account) -> "AccountDTO":
+        return AccountDTO(
+            id=acc.id,
+            name=fix_mojibake(acc.name or ""),
+            login=acc.login or "",
+            password=acc.password or "",
+            profile_path=fix_mojibake(acc.profile_path or ""),
+            proxy=acc.proxy,
+            secrets=acc.secrets or {},
+            cookies=acc.cookies or {},
+            cookie_status=acc.cookie_status or COOKIE_STATUS_EMPTY,
+            status=acc.status or COOKIE_STATUS_OK,
+            cooldown_until=acc.cooldown_until,
+            captcha_tries=acc.captcha_tries or 0,
+        )
+
+    def to_model_update(self, acc: Account) -> Account:
+        acc.name = fix_mojibake(self.name)
+        acc.login = self.login
+        acc.password = self.password
+        acc.profile_path = fix_mojibake(self.profile_path)
+        acc.proxy = self.proxy
+        acc.secrets = self.secrets
+        acc.cookies = self.cookies
+        acc.cookie_status = self.cookie_status
+        acc.status = self.status
+        acc.cooldown_until = self.cooldown_until
+        acc.captcha_tries = self.captcha_tries
+        return acc
+
+
+def _auto_refresh(session) -> None:
     now = datetime.utcnow()
-    stmt = select(Account).where(Account.status.in_(['cooldown', 'captcha']))
+    stmt = select(Account).where(Account.status.in_(["cooldown", "captcha"]))
     for acc in session.execute(stmt).scalars():
         if acc.cooldown_until and acc.cooldown_until <= now:
-            acc.status = 'ok'
+            acc.status = COOKIE_STATUS_OK
             acc.cooldown_until = None
             acc.captcha_tries = 0
     session.commit()
 
 
-def _sanitize_account(account: Account) -> Account:
-    account.name = fix_mojibake(account.name)
-    account.profile_path = fix_mojibake(account.profile_path)
-    account.proxy = fix_mojibake(account.proxy)
-    account.notes = fix_mojibake(account.notes)
-    account.status = fix_mojibake(account.status)
-    return account
+def _cookie_status_from_cookies(cookies: Dict[str, Any]) -> str:
+    if not cookies:
+        return COOKIE_STATUS_EMPTY
+    # Heuristic: cookie dict provided with at least one non-empty value
+    has_non_empty = any(bool(v) for v in cookies.values())
+    return COOKIE_STATUS_OK if has_non_empty else COOKIE_STATUS_EMPTY
 
 
-def list_accounts() -> list[Account]:
+# CRUD operations
+
+def list_accounts() -> List[AccountDTO]:
     with SessionLocal() as session:
         _auto_refresh(session)
-        result = session.execute(select(Account).order_by(Account.name))
-        return [_sanitize_account(acc) for acc in result.scalars()]
+        stmt = select(Account)
+        return [AccountDTO.from_model(a) for a in session.execute(stmt).scalars()]
 
 
-def create_account(name: str, profile_path: str, proxy: str | None = None, notes: str | None = None) -> Account:
+def get_account(acc_id: int) -> Optional[AccountDTO]:
     with SessionLocal() as session:
-        account = Account(name=name, profile_path=profile_path, proxy=proxy or None, notes=notes)
-        session.add(account)
+        _auto_refresh(session)
+        acc = session.get(Account, acc_id)
+        return AccountDTO.from_model(acc) if acc else None
+
+
+def create_account(data: Dict[str, Any]) -> AccountDTO:
+    with SessionLocal() as session:
+        acc = Account(**data)
+        acc.cookie_status = _cookie_status_from_cookies(data.get("cookies") or {})
+        session.add(acc)
         session.commit()
-        session.refresh(account)
-        return _sanitize_account(account)
+        session.refresh(acc)
+        return AccountDTO.from_model(acc)
 
 
-def upsert_account(name: str, profile_path: str, proxy: str | None = None, notes: str | None = None) -> Account:
+def update_account(acc_id: int, data: Dict[str, Any]) -> Optional[AccountDTO]:
     with SessionLocal() as session:
-        stmt = select(Account).where(Account.name == name)
-        existing = session.execute(stmt).scalar_one_or_none()
-        if existing:
-            existing.profile_path = profile_path
-            existing.proxy = proxy or None
-            existing.notes = notes
-            session.commit()
-            session.refresh(existing)
-            return _sanitize_account(existing)
-        account = Account(name=name, profile_path=profile_path, proxy=proxy or None, notes=notes)
-        session.add(account)
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return None
+        for k, v in data.items():
+            setattr(acc, k, v)
+        if "cookies" in data:
+            acc.cookie_status = _cookie_status_from_cookies(acc.cookies)
         session.commit()
-        session.refresh(account)
-        return _sanitize_account(account)
+        session.refresh(acc)
+        return AccountDTO.from_model(acc)
 
 
-def update_account(account_id: int, **fields) -> Account:
+def delete_account(acc_id: int) -> bool:
     with SessionLocal() as session:
-        account = session.get(Account, account_id)
-        if account is None:
-            raise ValueError(f'Account {account_id} not found')
-        for key, value in fields.items():
-            if hasattr(account, key):
-                setattr(account, key, value)
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return False
+        session.delete(acc)
         session.commit()
-        session.refresh(account)
-        return _sanitize_account(account)
+        return True
 
 
-def delete_account(account_id: int) -> None:
-    with SessionLocal() as session:
-        account = session.get(Account, account_id)
-        if account:
-            session.delete(account)
-            session.commit()
+# Runtime JSON integration
+
+def load_runtime_accounts() -> List[Dict[str, Any]]:
+    if not RUNTIME_ACCOUNTS.exists():
+        return []
+    try:
+        return json.loads(RUNTIME_ACCOUNTS.read_text(encoding="utf-8"))
+    except Exception:
+        return []
 
 
-def set_status(account_id: int, status: str, *, cooldown_minutes: int | None = None, captcha_increment: bool = False) -> Account:
-    with SessionLocal() as session:
-        account = session.get(Account, account_id)
-        if account is None:
-            raise ValueError(f'Account {account_id} not found')
-        account.status = status
-        if cooldown_minutes is not None:
-            account.cooldown_until = datetime.utcnow() + timedelta(minutes=cooldown_minutes)
-        elif status == 'ok':
-            account.cooldown_until = None
-        if captcha_increment:
-            account.captcha_tries = (account.captcha_tries or 0) + 1
-        session.commit()
-        session.refresh(account)
-        return _sanitize_account(account)
+def save_runtime_accounts(accounts: List[Dict[str, Any]]) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    RUNTIME_ACCOUNTS.write_text(json.dumps(accounts, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def mark_captcha(account_id: int, minutes: int = 30) -> Account:
-    return set_status(account_id, 'captcha', cooldown_minutes=minutes, captcha_increment=True)
+def sync_accounts_to_runtime() -> None:
+    # Export minimal safe subset
+    accounts = []
+    for dto in list_accounts():
+        accounts.append({
+            "id": dto.id,
+            "name": dto.name,
+            "login": dto.login,
+            "profile_path": dto.profile_path,
+            "proxy": dto.proxy,
+            "cookie_status": dto.cookie_status,
+            "status": dto.status,
+        })
+    save_runtime_accounts(accounts)
 
 
-def mark_cooldown(account_id: int, minutes: int = 10) -> Account:
-    return set_status(account_id, 'cooldown', cooldown_minutes=minutes)
-
-
-def mark_error(account_id: int) -> Account:
-    return set_status(account_id, 'error')
-
-
-def mark_ok(account_id: int) -> Account:
-    return set_status(account_id, 'ok')
-
-
-def update_account_proxy(account_name: str, proxy: str | None) -> Account:
-    """Обновить прокси у аккаунта по имени"""
-    with SessionLocal() as session:
-        stmt = select(Account).where(Account.name == account_name)
-        account = session.execute(stmt).scalar_one_or_none()
-        if account is None:
-            raise ValueError(f'Account {account_name} not found')
-        account.proxy = proxy
-        session.commit()
-        session.refresh(account)
-        return _sanitize_account(account)
-
-
-# ========== НОВЫЕ ФУНКЦИИ ИЗ ФАЙЛА 42 ==========
-
-async def test_proxy(proxy: Optional[str], timeout: int = 10) -> Dict[str, Any]:
-    """
-    Проверка прокси
-    
-    Returns:
-        {"ok": True/False, "ip": "1.2.3.4" или "error": "описание ошибки"}
-    """
-    if not ASYNC_AVAILABLE:
-        return {"ok": False, "error": "aiohttp не установлен"}
-    
+# Proxy utilities
+async def _test_proxy_async(proxy: Optional[str], timeout: int = 10) -> Tuple[bool, Optional[str]]:
     if not proxy:
-        return {"ok": True, "ip": None, "message": "Без прокси"}
-    
-    try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session:
-            async with session.get(
-                "https://yandex.ru/internet",
-                proxy=proxy,
-                headers={"User-Agent": "Mozilla/5.0"}
-            ) as resp:
-                resp.raise_for_status()
-                ip = resp.headers.get("x-client-ip") or "ok"
-                return {"ok": True, "ip": ip}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def get_cookies_status(account: Account) -> str:
-    """
-    Статус куки аккаунта
-    
-    Returns:
-        "None" | "Fresh" | "Expired"
-    """
-    # Куки хранятся в runtime/profiles/<name>.json (storage_state Playwright)
-    profile_path = Path(account.profile_path)
-    cookies_file = profile_path / "cookies.json"  # или storage_state.json
-    
-    # Проверяем несколько вариантов
-    for possible_file in [
-        cookies_file,
-        profile_path / "storage_state.json",
-        profile_path / "state.json"
-    ]:
-        if possible_file.exists():
-            age_seconds = time.time() - possible_file.stat().st_mtime
-            age_days = age_seconds / (24 * 3600)
-            
-            if age_days < 7:
-                return "Fresh"
-            else:
-                return "Expired"
-    
-    return "None"
-
-
-async def autologin_account(account: Account) -> Dict[str, Any]:
-    """
-    Автологин аккаунта через Playwright
-    Открывает Wordstat, проверяет авторизацию, сохраняет storage_state
-    
-    Returns:
-        {"ok": True/False, "message": "...", "storage_path": "..."}
-    """
+        return True, None  # no proxy required
     if not ASYNC_AVAILABLE:
-        return {"ok": False, "message": "Playwright не установлен"}
-    
-    profile_path = Path(account.profile_path)
-    profile_path.mkdir(parents=True, exist_ok=True)
-    storage_file = profile_path / "storage_state.json"
-    
+        return False, "async deps missing"
+    url = "https://api.ipify.org?format=json"
     try:
-        from ..utils.proxy import parse_proxy
-        proxy_config = parse_proxy(account.proxy) if account.proxy else None
-        
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=False)
-            
-            context = await browser.new_context(
-                proxy=proxy_config,
-                viewport={"width": 1280, "height": 900}
-            )
-            
-            page = await context.new_page()
-            
-            # Открываем Wordstat
-            await page.goto("https://wordstat.yandex.ru/", timeout=60000)
-            
-            # Ждем загрузки
-            await page.wait_for_load_state("domcontentloaded")
-            
-            # Проверяем авторизован ли
-            current_url = page.url
-            
-            if "passport.yandex" in current_url or "passport.ya.ru" in current_url:
-                await browser.close()
-                return {
-                    "ok": False,
-                    "message": "Требуется ручной вход (открыта страница паспорта)"
-                }
-            
-            # Сохраняем storage_state
-            await context.storage_state(path=str(storage_file))
-            await browser.close()
-            
-            # Обновляем last_used_at
-            with SessionLocal() as session:
-                stmt = select(Account).where(Account.id == account.id)
-                acc = session.execute(stmt).scalar_one_or_none()
-                if acc:
-                    acc.last_used_at = datetime.utcnow()
-                    session.commit()
-            
-            return {
-                "ok": True,
-                "message": "Авторизация успешна",
-                "storage_path": str(storage_file)
-            }
-            
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=timeout)) as sess:
+            async with sess.get(url, proxy=proxy) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return True, data.get("ip")
+                return False, f"status {resp.status}"
     except Exception as e:
-        return {"ok": False, "message": f"Ошибка: {e}"}
+        return False, str(e)
 
+
+def test_proxy(proxy: Optional[str], timeout: int = 10) -> Dict[str, Any]:
+    if not ASYNC_AVAILABLE:
+        return {"ok": False, "reason": "async deps missing"}
+    ok, info = asyncio.get_event_loop().run_until_complete(_test_proxy_async(proxy, timeout))
+    return {"ok": ok, "info": info}
+
+
+# Autologin via Playwright
+async def _autologin_async(login_url: str, login: str, password: str, proxy: Optional[str] = None,
+                           cookie_path: Optional[Path] = None,
+                           login_selector: str = "input[name='login']",
+                           password_selector: str = "input[name='password']",
+                           submit_selector: str = "button[type='submit']",
+                           wait_selector: Optional[str] = None,
+                           headless: bool = True) -> Dict[str, Any]:
+    if not ASYNC_AVAILABLE:
+        return {"ok": False, "reason": "async deps missing"}
+    pw_proxy = None
+    if proxy:
+        # Support formats: http://user:pass@host:port, socks5://...
+        pw_proxy = {"server": proxy}
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless, proxy=pw_proxy)
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(login_url, timeout=45000)
+        await page.fill(login_selector, login)
+        await page.fill(password_selector, password)
+        await page.click(submit_selector)
+        if wait_selector:
+            await page.wait_for_selector(wait_selector, timeout=45000)
+        # collect cookies
+        cookies = await context.cookies()
+        await browser.close()
+        return {"ok": True, "cookies": cookies}
+
+
+def autologin_and_update(acc_id: int, login_url: str, selectors: Dict[str, str], headless: bool = True) -> Optional[AccountDTO]:
+    if not ASYNC_AVAILABLE:
+        return None
+    with SessionLocal() as session:
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return None
+        sel = {
+            "login_selector": selectors.get("login_selector", "input[name='login']"),
+            "password_selector": selectors.get("password_selector", "input[name='password']"),
+            "submit_selector": selectors.get("submit_selector", "button[type='submit']"),
+            "wait_selector": selectors.get("wait_selector"),
+        }
+        result = asyncio.get_event_loop().run_until_complete(
+            _autologin_async(
+                login_url=login_url,
+                login=acc.login,
+                password=acc.password,
+                proxy=acc.proxy,
+                cookie_path=None,
+                headless=headless,
+                **sel,
+            )
+        )
+        if not result.get("ok"):
+            acc.status = "login_failed"
+            session.commit()
+            return AccountDTO.from_model(acc)
+        acc.cookies = result.get("cookies", {})
+        acc.cookie_status = _cookie_status_from_cookies(acc.cookies)
+        acc.status = COOKIE_STATUS_OK if acc.cookie_status == COOKIE_STATUS_OK else "need_login"
+        session.commit()
+        session.refresh(acc)
+        return AccountDTO.from_model(acc)
+
+
+# Maintenance helpers
+
+def mark_captcha(acc_id: int, cooldown_minutes: int = 30) -> Optional[AccountDTO]:
+    with SessionLocal() as session:
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return None
+        acc.status = "captcha"
+        acc.captcha_tries = (acc.captcha_tries or 0) + 1
+        acc.cooldown_until = datetime.utcnow() + timedelta(minutes=cooldown_minutes)
+        session.commit()
+        session.refresh(acc)
+        return AccountDTO.from_model(acc)
+
+
+def mark_cooldown(acc_id: int, minutes: int) -> Optional[AccountDTO]:
+    with SessionLocal() as session:
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return None
+        acc.status = "cooldown"
+        acc.cooldown_until = datetime.utcnow() + timedelta(minutes=minutes)
+        session.commit()
+        session.refresh(acc)
+        return AccountDTO.from_model(acc)
+
+
+def refresh_cookie_status(acc_id: int) -> Optional[AccountDTO]:
+    with SessionLocal() as session:
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return None
+        acc.cookie_status = _cookie_status_from_cookies(acc.cookies)
+        if acc.cookie_status != COOKIE_STATUS_OK:
+            acc.status = "need_login"
+        session.commit()
+        session.refresh(acc)
+        return AccountDTO.from_model(acc)
+
+
+def proxy_check_and_update(acc_id: int, timeout: int = 10) -> Optional[Dict[str, Any]]:
+    with SessionLocal() as session:
+        acc = session.get(Account, acc_id)
+        if not acc:
+            return None
+        result = test_proxy(acc.proxy, timeout=timeout)
+        acc.secrets = acc.secrets or {}
+        acc.secrets["proxy_test"] = result
+        acc.status = PROXY_OK if result.get("ok") else PROXY_BAD
+        session.commit()
+        return result
