@@ -1,201 +1,385 @@
 """
-Full Pipeline Worker для Turbo Parser
-Wordstat → Direct → Clustering → Export
+Full Pipeline Worker — автоматизация всего конвейера под ключ
+WS → Direct → Clustering → Minus → Export, поддержка задачного файла сцен
 """
+from __future__ import annotations
 
 import asyncio
+import json
+import os
+import sys
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QThread, Signal
 
+# Внутренние сервисы
+# Сервисы вызываются как обычные python-функции/корутины, ожидаемые точки входа:
+# - frequency.run_frequency_batch(queries: List[str], region: int, out_dir: Path) -> Path
+# - direct_batch.run_direct_batch(input_path: Path, out_dir: Path) -> Path
+# - clustering.run_clustering(input_path: Path, out_dir: Path) -> Path
+# - minus_words.run_minus_words(input_path: Path, out_dir: Path) -> Path
+# - export.run_export(input_path: Path, out_dir: Path) -> Path
+# Если у модуля отличающиеся имена функций — адаптируйте в ServiceAdapter ниже.
+
+try:
+    from services import frequency as frequency_service
+except Exception:  # логируем, но продолжаем — возможно вызов через CLI-обертки
+    frequency_service = None
+
+try:
+    from services import direct_batch as direct_service
+except Exception:
+    direct_service = None
+
+# Кластеризация может лежать в core/services/utils — пробуем несколько импортов
+clustering_service = None
+for mod_path in (
+    "services.clustering",
+    "core.clustering",
+    "utils.clustering",
+    "services.cluster",
+    "core.cluster",
+):
+    if clustering_service is None:
+        try:
+            clustering_service = __import__(mod_path, fromlist=["*"])
+        except Exception:
+            pass
+
+try:
+    from services import minus_words as minus_service
+except Exception:
+    minus_service = None
+
+# Экспорт результатов (если присутствует)
+export_service = None
+for mod_path in (
+    "services.export",
+    "core.export",
+    "utils.export",
+    "services.exporter",
+):
+    if export_service is None:
+        try:
+            export_service = __import__(mod_path, fromlist=["*"])
+        except Exception:
+            pass
+
+
+@dataclass
+class StageResult:
+    name: str
+    input_path: Optional[Path]
+    output_path: Optional[Path]
+    ok: bool
+    meta: Dict[str, Any]
+
+
+class ServiceAdapter:
+    """Адаптер для вызова разных реализаций сервисов единым способом."""
+
+    @staticmethod
+    async def run_frequency(queries: List[str], region: int, out_dir: Path) -> Path:
+        # Попытка 1: нативная функция
+        if frequency_service and hasattr(frequency_service, "run_frequency_batch"):
+            return await _maybe_await(
+                frequency_service.run_frequency_batch(queries=queries, region=region, out_dir=out_dir)
+            )
+        # Попытка 2: возможная sync-функция
+        if frequency_service and hasattr(frequency_service, "run"):
+            return await _maybe_await(
+                frequency_service.run(queries=queries, region=region, out_dir=out_dir)
+            )
+        # Попытка 3: CLI
+        return await _run_cli([
+            sys.executable,
+            "-m",
+            "services.frequency",
+            "--region",
+            str(region),
+            "--out",
+            str(out_dir),
+            "--queries",
+            json.dumps(queries, ensure_ascii=False),
+        ])
+
+    @staticmethod
+    async def run_direct(input_path: Path, out_dir: Path) -> Path:
+        if direct_service and hasattr(direct_service, "run_direct_batch"):
+            return await _maybe_await(
+                direct_service.run_direct_batch(input_path=input_path, out_dir=out_dir)
+            )
+        if direct_service and hasattr(direct_service, "run"):
+            return await _maybe_await(
+                direct_service.run(input_path=input_path, out_dir=out_dir)
+            )
+        return await _run_cli([
+            sys.executable,
+            "-m",
+            "services.direct_batch",
+            "--in",
+            str(input_path),
+            "--out",
+            str(out_dir),
+        ])
+
+    @staticmethod
+    async def run_clustering(input_path: Path, out_dir: Path) -> Path:
+        if clustering_service:
+            for fn in ("run_clustering", "run", "cluster_batch"):
+                if hasattr(clustering_service, fn):
+                    return await _maybe_await(
+                        getattr(clustering_service, fn)(input_path=input_path, out_dir=out_dir)
+                    )
+        return await _run_cli([
+            sys.executable,
+            "-m",
+            "services.clustering",
+            "--in",
+            str(input_path),
+            "--out",
+            str(out_dir),
+        ])
+
+    @staticmethod
+    async def run_minus(input_path: Path, out_dir: Path) -> Path:
+        if minus_service and hasattr(minus_service, "run_minus_words"):
+            return await _maybe_await(
+                minus_service.run_minus_words(input_path=input_path, out_dir=out_dir)
+            )
+        if minus_service and hasattr(minus_service, "run"):
+            return await _maybe_await(
+                minus_service.run(input_path=input_path, out_dir=out_dir)
+            )
+        return await _run_cli([
+            sys.executable,
+            "-m",
+            "services.minus_words",
+            "--in",
+            str(input_path),
+            "--out",
+            str(out_dir),
+        ])
+
+    @staticmethod
+    async def run_export(input_path: Path, out_dir: Path) -> Path:
+        if export_service:
+            for fn in ("run_export", "run", "export_batch"):
+                if hasattr(export_service, fn):
+                    return await _maybe_await(
+                        getattr(export_service, fn)(input_path=input_path, out_dir=out_dir)
+                    )
+        # CLI fallback
+        return await _run_cli([
+            sys.executable,
+            "-m",
+            "services.export",
+            "--in",
+            str(input_path),
+            "--out",
+            str(out_dir),
+        ])
+
+
+async def _maybe_await(result):
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
+
+
+async def _run_cli(cmd: List[str]) -> Path:
+    """Запускает подпроцесс, ожидает завершения, валидирует выходной путь из stdout."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(Path.cwd()),
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{stderr.decode(errors='ignore')}")
+    # Ожидаем, что процесс выведет путь результата одной строкой JSON: {"output": "/path"}
+    try:
+        data = json.loads(stdout.decode(errors="ignore"))
+        out = Path(data.get("output"))
+        if not out.exists():
+            raise FileNotFoundError(out)
+        return out
+    except Exception as e:
+        raise RuntimeError(f"Invalid CLI output for {' '.join(cmd)}: {e}\nSTDOUT: {stdout[:500].decode(errors='ignore')}")
+
 
 class FullPipelineWorkerThread(QThread):
-    """Поток для FULL PIPELINE: Wordstat → Direct → Clustering"""
-    log_signal = Signal(str, str, str, str, str, str, str, str)  # время, фраза, частота, CPC, показы, бюджет, группа, статус
-    stats_signal = Signal(int, int, int, float, float)  # обработано, успешно, ошибок, скорость, время
+    """Поток для полного конвейера: WS → Direct → Clustering → Minus → Export."""
+
+    # время, фраза, частота, CPC, показы, бюджет, группа, статус
+    log_signal = Signal(str, str, str, str, str, str, str, str)
+    # обработано, успешно, ошибок, скорость, время
+    stats_signal = Signal(int, int, int, float, float)
+    # общий лог одной строкой
     log_message = Signal(str)
     error_signal = Signal(str)
-    progress_signal = Signal(int, int, str)  # текущий, всего, этап
+    # текущий, всего, этап
+    progress_signal = Signal(int, int, str)
     finished_signal = Signal(bool, str)
-    results_ready = Signal(list)  # Полные результаты для таблицы
-    
-    def __init__(self, queries, region=225):
+    # Полные результаты (список файлов/объектов) для таблицы/интерфейса
+    results_ready = Signal(list)
+
+    def __init__(self, queries: Optional[List[str]] = None, region: int = 225,
+                 task_file: Optional[str] = None, out_root: Optional[str] = None):
         super().__init__()
-        self.queries = queries
+        self.queries = queries or []
         self.region = region
-        self.start_time = None
+        self.task_file = task_file
+        self.out_root = Path(out_root) if out_root else Path("runtime/outputs")
         self._cancelled = False
-        
-    def run(self):
-        """Запуск FULL PIPELINE"""
-        self.log_message.emit(f"🚀 Запуск Full Pipeline: {len(self.queries)} фраз")
-        self.start_time = time.time()
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        success = False
-        message = ""
-        
-        try:
-            results = loop.run_until_complete(self._run_full_pipeline())
-            message = f"✅ Обработано {len(results)} фраз"
-            success = True
-            self.results_ready.emit(results)
-        except Exception as exc:
-            message = f"❌ Ошибка: {exc}"
-            self.log_message.emit(traceback.format_exc())
-            self.error_signal.emit(str(exc))
-        finally:
-            duration = time.time() - self.start_time if self.start_time else 0
-            self.log_message.emit(f"⏱ Время выполнения: {duration:.1f} сек")
-            try:
-                loop.run_until_complete(loop.shutdown_asyncgens())
-            except:
-                pass
-            loop.close()
-            self.finished_signal.emit(success, message)
-    
-    async def _run_full_pipeline(self):
-        """Полный pipeline: freq → budget → cluster"""
-        from ..services.frequency import parse_batch_wordstat
-        from ..services.direct import forecast_batch_direct, merge_freq_and_forecast
-        
-        total_steps = len(self.queries)
-        results = []
-        
-        # ШАГ 1: Парсинг частотности (Wordstat)
-        self.log_message.emit("📊 Этап 1/3: Парсинг частотности (Wordstat)...")
-        self.progress_signal.emit(0, total_steps, "Wordstat")
-        
-        freq_results = await parse_batch_wordstat(
-            self.queries,
-            chunk_size=80,
-            region=self.region
-        )
-        
-        for i, result in enumerate(freq_results):
-            if self._cancelled:
-                break
-            phrase = result['phrase']
-            freq = result['freq']
-            self.log_signal.emit(
-                datetime.now().strftime("%H:%M:%S"),
-                phrase,
-                f"{freq:,}",
-                "-", "-", "-", "-", "📊"
-            )
-            self.progress_signal.emit(i + 1, total_steps, "Wordstat")
-            await asyncio.sleep(0.01)  # UI update
-        
-        if self._cancelled:
-            return []
-        
-        # ШАГ 2: Прогноз бюджета (Direct)
-        self.log_message.emit("💰 Этап 2/3: Прогноз бюджета (Direct)...")
-        self.progress_signal.emit(0, len(freq_results), "Direct")
-        
-        forecast_results = await forecast_batch_direct(
-            freq_results,
-            chunk_size=100,
-            region=self.region
-        )
-        
-        # ШАГ 3: Объединение данных
-        self.log_message.emit("🔗 Этап 3/3: Объединение и группировка...")
-        merged = await merge_freq_and_forecast(freq_results, forecast_results)
-        
-        # ШАГ 4: Кластеризация
-        clustered = await self._cluster_phrases(merged)
-        
-        # Финальный лог с полными данными
-        for i, result in enumerate(clustered):
-            phrase = result.get('phrase', '')
-            freq = result.get('freq', 0)
-            cpc = result.get('cpc', 0)
-            impressions = result.get('impressions', 0)
-            budget = result.get('budget', 0)
-            stem = result.get('stem', '')
-            
-            self.log_signal.emit(
-                datetime.now().strftime("%H:%M:%S"),
-                phrase,
-                f"{freq:,}",
-                f"{cpc:.2f}",
-                f"{impressions:,}",
-                f"{budget:.2f}",
-                stem[:20],  # First 20 chars
-                "✅"
-            )
-            self.progress_signal.emit(i + 1, len(clustered), "Готово")
-        
-        # Статистика
-        elapsed = time.time() - self.start_time
-        speed = len(clustered) / elapsed * 60 if elapsed > 0 else 0
-        self.stats_signal.emit(len(clustered), len(clustered), 0, speed, elapsed)
-        
-        return clustered
-    
-    async def _cluster_phrases(self, data: list) -> list:
-        """Кластеризация по стеммам (NLTK)"""
-        try:
-            from nltk.stem.snowball import SnowballStemmer
-            from nltk.corpus import stopwords
-            import nltk
-            
-            # Скачиваем данные если нужно
-            try:
-                nltk.data.find('corpora/stopwords')
-            except LookupError:
-                nltk.download('stopwords', quiet=True)
-            
-            stemmer = SnowballStemmer('russian')
-            russian_stopwords = set(stopwords.words('russian'))
-            
-            grouped = {}
-            for item in data:
-                phrase = item['phrase'].lower()
-                words = phrase.split()
-                
-                # Фильтруем стоп-слова
-                filtered = [w for w in words if w not in russian_stopwords]
-                if not filtered:
-                    filtered = words  # Если все стоп-слова, берем оригинал
-                
-                # Стемминг первого значимого слова
-                stem = stemmer.stem(filtered[0]) if filtered else phrase
-                
-                if stem not in grouped:
-                    grouped[stem] = []
-                
-                item['stem'] = stem
-                grouped[stem].append(item)
-            
-            # Добавляем статистику по группам
-            result = []
-            for stem, items in grouped.items():
-                avg_freq = sum(i.get('freq', 0) for i in items) / len(items)
-                total_budget = sum(i.get('budget', 0) for i in items)
-                
-                for item in items:
-                    item['group_size'] = len(items)
-                    item['group_avg_freq'] = avg_freq
-                    item['group_total_budget'] = total_budget
-                    result.append(item)
-            
-            # Сортируем по частотности
-            result.sort(key=lambda x: x.get('freq', 0), reverse=True)
-            
-            return result
-            
-        except Exception as e:
-            self.log_message.emit(f"⚠ Кластеризация недоступна: {e}")
-            # Возвращаем без кластеризации
-            for item in data:
-                item['stem'] = '-'
-                item['group_size'] = 1
-            return data
-    
+        self.start_time: Optional[float] = None
+
+    # Публичные API
     def cancel(self):
-        """Отмена выполнения"""
         self._cancelled = True
+
+    # Основной цикл
+    def run(self):
+        self.log_message.emit(f"🚀 Запуск Full Pipeline, время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.start_time = time.time()
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            results = loop.run_until_complete(self._run_pipeline())
+            self.results_ready.emit([str(p) for p in results if p])
+            self.finished_signal.emit(True, "Готово")
+        except Exception:
+            err = traceback.format_exc()
+            self.error_signal.emit(err)
+            self.finished_signal.emit(False, "Ошибка выполнения, детали в логе")
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+
+    async def _run_pipeline(self) -> List[Path]:
+        # Поддержка задачного файла: multiple scenes
+        if self.task_file:
+            return await self._run_from_task_file(Path(self.task_file))
+        # Иначе — одиночный прогон по self.queries
+        return await self._run_single_scene(self.queries, scene_name="ad-hoc")
+
+    async def _run_from_task_file(self, path: Path) -> List[Path]:
+        if not path.exists():
+            raise FileNotFoundError(f"Task file not found: {path}")
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        scenes: List[Dict[str, Any]] = data.get("scenes") or []
+        results: List[Path] = []
+        self.log_message.emit(f"🔧 Загружено сцен: {len(scenes)} из {path}")
+        for idx, scene in enumerate(scenes, start=1):
+            if self._cancelled:
+                self.log_message.emit("⛔ Прервано пользователем")
+                break
+            queries = scene.get("queries") or []
+            region = int(scene.get("region") or self.region)
+            name = scene.get("name") or f"scene_{idx:02d}"
+            self.log_message.emit(f"▶️ Сцена {idx}/{len(scenes)}: {name}, фраз: {len(queries)}, регион: {region}")
+            out_files = await self._run_single_scene(queries, region=region, scene_name=name)
+            results.extend(out_files)
+        return results
+
+    async def _run_single_scene(self, queries: List[str], region: Optional[int] = None, scene_name: str = "scene") -> List[Path]:
+        region = int(region or self.region)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_out = self.out_root / f"{scene_name}_{ts}"
+        ws_out = base_out / "ws"
+        dr_out = base_out / "direct"
+        cl_out = base_out / "cluster"
+        mn_out = base_out / "minus"
+        ex_out = base_out / "export"
+        for d in (ws_out, dr_out, cl_out, mn_out, ex_out):
+            d.mkdir(parents=True, exist_ok=True)
+
+        outputs: List[Path] = []
+
+        # 1) Wordstat / Frequency
+        self._progress(1, 5, f"Wordstat/Frequency: {len(queries)} фраз, регион {region}")
+        ws_path: Path = await ServiceAdapter.run_frequency(queries=queries, region=region, out_dir=ws_out)
+        self.log_message.emit(f"✅ Frequency готово: {ws_path}")
+        outputs.append(ws_path)
+
+        # 2) Direct Batch
+        self._progress(2, 5, "Direct Batch: генерация кампаний/групп")
+        dr_path: Path = await ServiceAdapter.run_direct(input_path=ws_path, out_dir=dr_out)
+        self.log_message.emit(f"✅ Direct готово: {dr_path}")
+        outputs.append(dr_path)
+
+        # 3) Clustering
+        self._progress(3, 5, "Clustering: группировка и семантика")
+        cl_path: Path = await ServiceAdapter.run_clustering(input_path=dr_path, out_dir=cl_out)
+        self.log_message.emit(f"✅ Clustering готово: {cl_path}")
+        outputs.append(cl_path)
+
+        # 4) Minus-слова
+        self._progress(4, 5, "Минусовка: вычисление минус-слов")
+        mn_path: Path = await ServiceAdapter.run_minus(input_path=cl_path, out_dir=mn_out)
+        self.log_message.emit(f"✅ Минусовка готово: {mn_path}")
+        outputs.append(mn_path)
+
+        # 5) Export
+        self._progress(5, 5, "Экспорт результатов")
+        ex_path: Path = await ServiceAdapter.run_export(input_path=mn_path, out_dir=ex_out)
+        self.log_message.emit(f"✅ Экспорт готово: {ex_path}")
+        outputs.append(ex_path)
+
+        return outputs
+
+    def _progress(self, cur: int, total: int, stage: str):
+        if self.start_time:
+            elapsed = time.time() - self.start_time
+            speed = cur / max(elapsed, 1e-6)
+            self.stats_signal.emit(cur, cur, 0, speed, elapsed)
+        self.progress_signal.emit(cur, total, stage)
+        self.log_message.emit(f"➡️ {stage}")
+
+
+# Утилита CLI для автономного запуска этого воркера (без GUI)
+# Пример задачного файла (tasks.json):
+# {
+#   "scenes": [
+#     {"name": "niche_1", "region": 213, "queries": ["купить пылесос", "пылесос dyson"]},
+#     {"name": "niche_2", "queries": ["робот пылесос", "wet&dry vacuum"]}
+#   ]
+# }
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Full pipeline worker runner")
+    parser.add_argument("--tasks", dest="tasks", type=str, help="Путь к задачному файлу JSON", default=None)
+    parser.add_argument("--queries", dest="queries", type=str, help="JSON-массив фраз для ad-hoc запуска", default=None)
+    parser.add_argument("--region", dest="region", type=int, default=225)
+    parser.add_argument("--out", dest="out", type=str, default="runtime/outputs")
+
+    args = parser.parse_args()
+
+    queries: List[str] = []
+    task_file: Optional[str] = args.tasks
+    if args.queries:
+        try:
+            queries = json.loads(args.queries)
+        except Exception:
+            print("[ERR] --queries должен быть JSON-массивом строк", file=sys.stderr)
+            sys.exit(2)
+
+    # Без GUI-сигналов: просто запустить и напечатать финальные пути
+    worker = FullPipelineWorkerThread(
+        queries=queries,
+        region=args.region,
+        task_file=task_file,
+        out_root=args.out,
+    )
+
+    # Простейшие
