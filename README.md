@@ -1,152 +1,322 @@
 # 🚀 KeySet - Full Pipeline Edition
 
-**Массовый парсинг Wordstat + Direct + Кластеризация**
-
-[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/websetpro-blip/keyset)
-[![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org)
-[![License](https://img.shields.io/badge/license-Open%20Source-brightgreen.svg)](LICENSE)
+**KeySet** — профессиональный инструмент для комплексного анализа ключевых слов с интеграцией Yandex Wordstat, Yandex Direct API и автоматической кластеризацией.
 
 ---
 
-## 🎯 Что это?
+## 📦 Основные возможности
 
-**KeySet** - это полный цикл анализа семантики для SEO:
+### 🔥 Full Pipeline Mode
+- **Wordstat парсинг** — автоматический сбор частотности по маскам
+- **Direct API интеграция** — прогнозы бюджетов, кликов, показов, CPC
+- **Автоматическая кластеризация** — NLTK-based группировка фраз
+- **CSV/XLSX экспорт** — полная поддержка UTF-8, мультиформатный вывод
 
-```
-Маски → Wordstat → Direct → Clustering → CSV
-```
+### ⚡ Турбо-парсер
+- До **195 фраз/минуту** (с учетом лимитов Yandex)
+- Умная обработка капчи и ротация аккаунтов
+- CDP режим с поддержкой user_data_dir
 
-**Как KeyCollector, но бесплатно и с автоматизацией!**
-
-### ⚡ Возможности:
-- 📊 **Wordstat парсинг** (60-80 фраз/мин)
-- 💰 **Direct прогноз** (CPC + бюджеты)
-- 🔗 **Кластеризация** (NLTK Russian)
-- ⚡ **Турбо-режим** (до 195 фраз/мин)
-- 🤖 **Автологин** (5 аккаунтов Яндекс)
-- 💾 **Export CSV** с полными данными
+### 🌍 Region & Proxy Management
+- **Выбор региона** — любой регион РФ для таргетинга
+- **Proxy поддержка** — HTTP/HTTPS/SOCKS5 прокси
+- **IP rotation** — автоматическая ротация при блокировках
 
 ---
 
 ## 🚀 Быстрый старт
 
-### 1. Клонируй и установи:
-```powershell
+### 1️⃣ Установка
+
+```bash
+# Клонирование репозитория
 git clone https://github.com/websetpro-blip/keyset.git
 cd keyset
+
+# Создание виртуального окружения
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+
+# Установка зависимостей
 pip install -r requirements.txt
-python -c "import nltk; nltk.download('stopwords')"
+
+# Установка Playwright браузеров
+playwright install chromium
 ```
 
-### 2. Запусти GUI:
-```powershell
-python -m keyset.app.main
+### 2️⃣ Настройка Yandex аккаунтов
+
+**Способ 1: Автологин (рекомендуется)**
+```bash
+python login.py --email your@email.com --password yourpass
 ```
 
-### 3. Используй Full Pipeline:
-- Открой вкладку **🚀 Full Pipeline**
-- Загрузи фразы из `data/example_phrases.txt`
-- Нажми **ЗАПУСТИТЬ**
-- Получи результаты с частотностью, CPC, бюджетами и группировкой!
-
-**Детали:** [QUICK_START.md](QUICK_START.md)
-
----
-
-## 📊 Full Pipeline (НОВОЕ!)
-
-### Полный цикл за один клик:
-
-```
-Этап 1: 📊 Wordstat   → Парсинг частотности
-Этап 2: 💰 Direct     → Прогноз бюджета + CPC
-Этап 3: 🔗 Clustering → Группировка по стеммам
-Этап 4: 💾 Export     → CSV с полными данными
+**Способ 2: Ручной вход**
+```bash
+python login.py --manual
 ```
 
-**Результат:** Таблица с 8 колонками:
-- Фраза | Частотность | CPC | Показы | Бюджет | Группа | Статус
+### 3️⃣ Настройка конфигурации
 
-**Скорость:** ~112 фраз/мин (комбо Wordstat+Direct)
-
-**Подробнее:** [FULL_PIPELINE_GUIDE.md](FULL_PIPELINE_GUIDE.md)
-
----
-
-## 📁 Структура проекта
-
+**config.json:**
+```json
+{
+  "region_id": 213,
+  "proxy": {
+    "enabled": true,
+    "server": "http://proxy.example.com:8080",
+    "username": "user",
+    "password": "pass"
+  },
+  "direct_api": {
+    "token": "YOUR_YANDEX_DIRECT_TOKEN",
+    "client_login": "your-client-login"
+  },
+  "parsing": {
+    "batch_size": 195,
+    "delay_range": [2, 5]
+  }
+}
 ```
-keyset/
-├── app/                    # Qt GUI интерфейс
-│   ├── main.py            # Главное окно
-│   ├── full_pipeline_tab.py  # Full Pipeline (НОВОЕ!)
-│   └── turbo_tab_qt.py    # Турбо парсер
-├── services/              # Бизнес-логика
-│   ├── frequency.py       # Wordstat парсинг
-│   ├── direct.py          # Direct прогноз (НОВОЕ!)
-│   └── accounts.py        # Управление аккаунтами
-├── workers/               # Async воркеры
-│   ├── full_pipeline_worker.py  # Pipeline worker (НОВОЕ!)
-│   └── turbo_parser_integration.py
-├── core/                  # База данных
-│   ├── db.py              # SQLite WAL (НОВОЕ!)
-│   └── models.py          # SQLAlchemy модели
-└── data/                  # Данные
-    ├── keyset.db         # База WAL режим
-    └── example_phrases.txt # Тестовые фразы
+
+### 4️⃣ Запуск парсинга
+
+```bash
+# Full Pipeline (Wordstat + Direct + Clustering)
+python main.py --mode full --input keywords.txt --output results/
+
+# Только Wordstat
+python main.py --mode wordstat --input keywords.txt
+
+# Только Direct прогнозы
+python main.py --mode direct --input keywords.txt
 ```
 
 ---
 
-## 💻 Требования
+## 📖 Детальные гайды
 
-- **Python:** 3.10+
-- **OS:** Windows 10+ (Linux/Mac с адаптацией)
-- **RAM:** 4GB+
-- **Интернет:** Для Wordstat/Direct API
+- 📘 **[QUICK_START.md](QUICK_START.md)** — быстрый старт для новичков
+- 📗 **[FULL_PIPELINE_GUIDE.md](FULL_PIPELINE_GUIDE.md)** — полное руководство по Full Pipeline
+- 📙 **[UPDATE_INSTRUCTIONS.md](UPDATE_INSTRUCTIONS.md)** — инструкции по обновлению
+- 📕 **[GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)** — workflow для разработки
 
-### Зависимости:
+---
+
+## 🌍 Настройка регионов и прокси
+
+### Выбор региона Wordstat
+
+```python
+# В коде или через config.json
+REGION_ID = 213  # Москва
+REGION_ID = 2    # Санкт-Петербург
+REGION_ID = 54   # Екатеринбург
+REGION_ID = 11316 # Новосибирск
 ```
-PySide6==6.8.0.2
-playwright==1.48.0
-nltk==3.9.1
-sqlalchemy==2.0.36
+
+**Полный список регионов:** https://yandex.ru/dev/direct/doc/dg/objects/regions.html
+
+### Настройка прокси
+
+**HTTP/HTTPS Proxy:**
+```json
+{
+  "proxy": {
+    "server": "http://proxy.example.com:8080",
+    "username": "user",
+    "password": "pass"
+  }
+}
+```
+
+**SOCKS5 Proxy:**
+```json
+{
+  "proxy": {
+    "server": "socks5://proxy.example.com:1080",
+    "username": "user",
+    "password": "pass"
+  }
+}
+```
+
+**Без прокси:**
+```json
+{
+  "proxy": {
+    "enabled": false
+  }
+}
 ```
 
 ---
 
-## 📚 Документация
+## 📊 Интеграция с Yandex Direct API
 
-- 🚀 [QUICK_START.md](QUICK_START.md) - Быстрый старт (5 минут)
-- 📘 [FULL_PIPELINE_GUIDE.md](FULL_PIPELINE_GUIDE.md) - Полное руководство
-- 📙 [UPDATE_INSTRUCTIONS.md](UPDATE_INSTRUCTIONS.md) - Обновление после git pull
-- 🔧 [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) - Git workflow для AI
+### Получение токена Direct API
+
+1. Перейдите: https://oauth.yandex.ru/
+2. Зарегистрируйте приложение
+3. Получите **OAuth Token**
+4. Добавьте в `config.json`:
+
+```json
+{
+  "direct_api": {
+    "token": "YOUR_OAUTH_TOKEN",
+    "client_login": "your-login"
+  }
+}
+```
+
+### Доступные метрики Direct
+
+- **Impressions** — прогноз показов
+- **Clicks** — прогноз кликов
+- **CTR** — средний CTR
+- **CPC** — средняя цена клика
+- **Budget** — необходимый бюджет
+
+---
+
+## 🧩 Кластеризация ключевых слов
+
+### NLTK Stemming
+
+```python
+from nltk.stem.snowball import RussianStemmer
+
+stemmer = RussianStemmer()
+keywords = ["купить телефон", "телефоны купить", "купить смартфон"]
+
+# Автоматическая группировка по стеммингу
+clusters = auto_cluster(keywords, method="stem")
+```
+
+### Методы кластеризации
+
+1. **Stemming** — морфологическая группировка
+2. **N-gram** — группировка по общим словам
+3. **Semantic** — семантическая близость (word2vec)
+
+---
+
+## 💾 Экспорт данных
+
+### CSV Export (UTF-8)
+
+```python
+import pandas as pd
+
+df = pd.DataFrame(results)
+df.to_csv('output.csv', encoding='utf-8-sig', index=False)
+```
+
+### XLSX Export
+
+```python
+from openpyxl import Workbook
+
+wb = Workbook()
+ws = wb.active
+ws.append(["Keyword", "Frequency", "CPC", "Cluster"])
+
+for row in results:
+    ws.append([row['keyword'], row['freq'], row['cpc'], row['cluster']])
+
+wb.save('output.xlsx')
+```
+
+### Форматы экспорта
+
+- **CSV** — универсальный формат (UTF-8 BOM для Excel)
+- **XLSX** — Excel с форматированием
+- **JSON** — для API интеграций
+- **KeyCollector** — прямой импорт в KC
 
 ---
 
 ## 🎓 Примеры использования
 
 ### Пример 1: Анализ конкурентов
-```
-1. Загрузи список брендов
-2. Full Pipeline → частотность + бюджеты
-3. Анализируй в Excel (группировка, сортировка)
+
+```bash
+# Создайте файл competitors.txt
+бренд1
+бренд2
+бренд3
+
+# Запустите Full Pipeline
+python main.py --mode full --input competitors.txt --region 213
+
+# Результат: CSV с частотами, CPC, кластерами
 ```
 
 ### Пример 2: Семантическое ядро
-```
-1. Базовые маски (купить, заказать, цена)
-2. Full Pipeline → оценки по всем
-3. Фильтр низкочастотных
-4. Export в KeyCollector
+
+```bash
+# Создайте файл seeds.txt
+купить [товар]
+заказать [товар]
+цена [товар]
+
+# Расширение через Wordstat
+python main.py --mode wordstat --expand --input seeds.txt
+
+# Результат: расширенное ядро с частотами
 ```
 
-### Пример 3: Бюджетирование
+### Пример 3: Бюджетирование кампании
+
+```bash
+# Все фразы кампании
+python main.py --mode direct --input campaign_keywords.txt
+
+# Результат: прогноз бюджета, кликов, показов
 ```
-1. Все планируемые фразы
-2. Full Pipeline → прогнозы
-3. Суммируй по группам
-4. Планируй бюджет кампании
+
+---
+
+## 🔧 Продвинутая конфигурация
+
+### Настройка парсинга
+
+```json
+{
+  "parsing": {
+    "batch_size": 195,
+    "delay_range": [2, 5],
+    "max_retries": 3,
+    "timeout": 30,
+    "user_agent": "custom-ua"
+  }
+}
+```
+
+### Настройка кластеризации
+
+```json
+{
+  "clustering": {
+    "method": "stem",
+    "threshold": 0.7,
+    "min_cluster_size": 3
+  }
+}
+```
+
+### Настройка экспорта
+
+```json
+{
+  "export": {
+    "formats": ["csv", "xlsx", "json"],
+    "encoding": "utf-8-sig",
+    "delimiter": ","
+  }
+}
 ```
 
 ---
@@ -157,7 +327,8 @@ sqlalchemy==2.0.36
 - ✅ Full Pipeline: Wordstat → Direct → Clustering
 - ✅ NLTK интеграция (Russian stemming)
 - ✅ WAL режим базы данных
-- ✅ Расширенный CSV export
+- ✅ Расширенный CSV export (UTF-8 BOM)
+- ✅ Region & Proxy management
 
 ### v1.0 (12.10.2025) - Турбо парсер
 - ✅ Турбо-парсер (до 195 фраз/мин)
@@ -166,19 +337,35 @@ sqlalchemy==2.0.36
 
 ---
 
+## ⚠️ Важные замечания
+
+### Лимиты Yandex
+- **Wordstat:** ~200 запросов/минуту
+- **Direct API:** 10,000 запросов/день
+- **Captcha:** обрабатывается автоматически
+
+### Требования
+- **Python:** 3.8+
+- **RAM:** минимум 2GB
+- **Disk:** 500MB для базы данных
+
+---
+
+## 🔗 Полезные ссылки
+
+- **Репозиторий:** https://github.com/websetpro-blip/keyset
+- **Issues:** https://github.com/websetpro-blip/keyset/issues
+- **Discussions:** https://github.com/websetpro-blip/keyset/discussions
+- **Yandex Direct API:** https://yandex.ru/dev/direct/
+- **Yandex Wordstat:** https://wordstat.yandex.ru/
+
+---
+
 ## ⚠️ ДЛЯ AI АГЕНТОВ
 
 **ОБЯЗАТЕЛЬНО:** После каждой правки → commit + push в GitHub!
 
 📄 **Инструкция:** [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)
-
----
-
-## 🔗 Ссылки
-
-- **Репозиторий:** https://github.com/websetpro-blip/keyset
-- **Issues:** https://github.com/websetpro-blip/keyset/issues
-- **Discussions:** https://github.com/websetpro-blip/keyset/discussions
 
 ---
 
