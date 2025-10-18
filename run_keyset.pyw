@@ -1,5 +1,5 @@
 ﻿"""
-KeySet — launch without terminal window (uses pythonw.exe).
+KeySet - launch without terminal window (uses pythonw.exe).
 """
 from __future__ import annotations
 

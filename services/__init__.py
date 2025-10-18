@@ -1,4 +1,4 @@
-from . import accounts, tasks, importer, phrase_tools, frequency, direct
+from . import accounts, tasks, importer, phrase_tools, frequency, direct, wordstat_ws
 
 __all__ = [
     "accounts",
@@ -7,4 +7,5 @@ __all__ = [
     "phrase_tools",
     "frequency",
     "direct",
+    "wordstat_ws",
 ]

@@ -5,17 +5,8 @@
 """
 
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLineEdit,
-    QLabel,
-    QHBoxLayout,
-    QPushButton,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QMenu,
-    QInputDialog,
-    QComboBox,
+    QWidget, QVBoxLayout, QLineEdit, QLabel, QHBoxLayout, QPushButton,
+    QTreeWidget, QTreeWidgetItem, QMenu, QInputDialog, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtGui import QAction, QColor, QFont, QIcon
@@ -41,9 +32,8 @@ class KeysPanel(QWidget):
     def setup_ui(self):
         """Создание интерфейса - ТОЛЬКО ГРУППЫ справа (как в Key Collector)"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(6)
-
+        layout.setContentsMargins(5, 5, 5, 5)
+        
         # Заголовок "Управление группами" (как в Key Collector)
         header_layout = QHBoxLayout()
         title = QLabel("Управление группами")
@@ -52,29 +42,7 @@ class KeysPanel(QWidget):
         header_layout.addStretch()
         
         layout.addLayout(header_layout)
-
-        # Кнопки управления группами — держим сверху
-        groups_actions = QHBoxLayout()
-        groups_actions.setSpacing(6)
-
-        create_group_btn = QPushButton("➕ Создать")
-        create_group_btn.setToolTip("Создать новую группу")
-        create_group_btn.clicked.connect(self._create_group_in_tree)
-        groups_actions.addWidget(create_group_btn)
-
-        rename_group_btn = QPushButton("✏️ Переименовать")
-        rename_group_btn.setToolTip("Переименовать группу")
-        rename_group_btn.clicked.connect(self._rename_group)
-        groups_actions.addWidget(rename_group_btn)
-
-        delete_group_btn = QPushButton("🗑️ Удалить")
-        delete_group_btn.setToolTip("Удалить группу")
-        delete_group_btn.clicked.connect(self._delete_group_from_tree)
-        groups_actions.addWidget(delete_group_btn)
-
-        groups_actions.addStretch()
-        layout.addLayout(groups_actions)
-
+        
         # Фильтр "Все" (как в Key Collector)
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["Все", "С фразами", "Пустые", "Корзина"])
@@ -95,10 +63,30 @@ class KeysPanel(QWidget):
         self.groups_tree.setAlternatingRowColors(True)
         self.groups_tree.setRootIsDecorated(True)  # Показываем стрелки раскрытия
         self.groups_tree.setIndentation(15)
-        self.groups_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.groups_tree.setHorizontalScrollMode(QTreeWidget.ScrollPerPixel)
         
         layout.addWidget(self.groups_tree, 1)
+        
+        # Кнопки управления группами
+        groups_actions = QHBoxLayout()
+        
+        create_group_btn = QPushButton("➕ Создать")
+        create_group_btn.setToolTip("Создать новую группу")
+        create_group_btn.clicked.connect(self._create_group_in_tree)
+        groups_actions.addWidget(create_group_btn)
+        
+        rename_group_btn = QPushButton("✏️ Переименовать")
+        rename_group_btn.setToolTip("Переименовать группу")
+        rename_group_btn.clicked.connect(self._rename_group)
+        groups_actions.addWidget(rename_group_btn)
+        
+        delete_group_btn = QPushButton("🗑️ Удалить")
+        delete_group_btn.setToolTip("Удалить группу")
+        delete_group_btn.clicked.connect(self._delete_group_from_tree)
+        groups_actions.addWidget(delete_group_btn)
+        
+        groups_actions.addStretch()
+        
+        layout.addLayout(groups_actions)
     
     def _filter_groups(self, text: str):
         """Фильтровать группы по поисковому запросу"""
@@ -118,9 +106,10 @@ class KeysPanel(QWidget):
     
     def clear(self):
         """Очистить панель"""
+        self.groups_list.clear()
         self._groups = {}
-        self._render_groups()
-
+        self._render_groups()  # Перерисовать (с Корзиной)
+    
     # === МЕТОДЫ ДЛЯ ВКЛАДКИ "ГРУППЫ" (файл 45) ===
     
     def load_groups(self, groups: dict):
@@ -130,9 +119,9 @@ class KeysPanel(QWidget):
         Args:
             groups: {group_name: [phrases]} или {cluster_id: {'name': str, 'phrases': [...]}}
         """
-        self._groups = groups or {}
+        self._groups = groups
         self._render_groups()
-
+    
     def _render_groups(self):
         """Отрисовать ДЕРЕВО групп с фразами (как в Key Collector!)"""
         self.groups_tree.clear()

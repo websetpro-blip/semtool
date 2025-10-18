@@ -120,12 +120,9 @@ class AutoLoginThread(QThread):
 
         self.status_signal.emit(f"[OK] Профиль РёР· Р'Р]: {profile_path}")
 
-        base_dir = Path("C:/AI/yandex")
-        profile_path_obj = Path(profile_path)
-        if not profile_path_obj.is_absolute():
-            profile_path_obj = base_dir / profile_path_obj
-        profile_path = str(profile_path_obj).replace("\\", "/")
-        self.status_signal.emit(f"[INFO] Используем профиль: {profile_path}")
+        if not profile_path.startswith("C:"):
+            profile_path = f"C:/AI/yandex/{profile_path}"
+            self.status_signal.emit(f"[INFO] Путь преобразован: {profile_path}")
 
         accounts_file = Path("C:/AI/yandex/configs/accounts.json")
         if not accounts_file.exists():
@@ -589,9 +586,9 @@ class AccountsTabExtended(QWidget):
     
     def refresh(self):
         """Обновить таблицу аккаунтов"""
-        # Получаем аккаунты и фильтруем demo_account
+        # Получаем аккаунты и фильтруем demo_account и wordstat_main (это профиль, а не аккаунт)
         all_accounts = account_service.list_accounts()
-        self._accounts = [acc for acc in all_accounts if acc.name != "demo_account"]
+        self._accounts = [acc for acc in all_accounts if acc.name not in ["demo_account", "wordstat_main"]]
         self.table.setRowCount(len(self._accounts))
         
         self.log_action(f"Загружено: {len(self._accounts)} аккаунтов")
@@ -633,43 +630,21 @@ class AccountsTabExtended(QWidget):
         self.table.blockSignals(False)
         self._update_buttons()
 
-    @staticmethod
-    def _normalize_profile_path(value: Optional[str], account_name: str) -> str:
-        """Привести значение профиля к абсолютному пути."""
-        base_dir = Path("C:/AI/yandex")
-
-        if value:
-            raw = Path(str(value).strip())
-        else:
-            raw = Path(".profiles") / account_name
-
-        if str(raw).startswith(".profiles"):
-            raw = base_dir / raw
-        elif not raw.is_absolute():
-            raw = base_dir / ".profiles" / raw
-
-        return str(raw).replace("\\", "/")
-
-    @staticmethod
-    def _format_profile_label(path: str, subtitle: str = "") -> str:
-        tail = Path(path).name
-        hint = f" {subtitle}" if subtitle else ""
-        return f"{tail}{hint} — {path}"
-
     def _profile_options(self, account):
         """Сформировать список доступных профилей для аккаунта."""
-        current = self._normalize_profile_path(account.profile_path, account.name)
-        options = [(current, self._format_profile_label(current, "(текущий)"))]
-
-        personal_default = self._normalize_profile_path(f".profiles/{account.name}", account.name)
-        if personal_default not in {opt[0] for opt in options}:
-            options.append((personal_default, self._format_profile_label(personal_default)))
-
+        options = [(account.name, f"{account.name} (личный)")]
+        if account.name != "wordstat_main":
+            options.append(("wordstat_main", "wordstat_main (общий)"))
         return options
 
     def _profile_value_from_account(self, account):
         """Определить текущий профиль из пути аккаунта."""
-        return self._normalize_profile_path(account.profile_path, account.name)
+        if not account.profile_path:
+            return account.name
+        profile_name = Path(account.profile_path).name
+        if "wordstat_main" in profile_name:
+            return "wordstat_main"
+        return profile_name or account.name
 
     @staticmethod
     def _profile_label(options, value):
@@ -677,7 +652,7 @@ class AccountsTabExtended(QWidget):
         for option_value, label in options:
             if option_value == value:
                 return label
-        return AccountsTabExtended._format_profile_label(value)
+        return value
     
     def _get_status_label(self, status):
         """Получить метку статуса"""
@@ -722,7 +697,12 @@ class AccountsTabExtended(QWidget):
     def _get_auth_status(self, account):
         """Получить статус авторизации"""
         # Проверяем куки в выбранном профиле
-        profile_path = self._normalize_profile_path(account.profile_path, account.name)
+        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        
+        # Если используем wordstat_main - проверяем куки там
+        if "wordstat_main" in profile_path:
+            profile_path = "C:/AI/yandex/.profiles/wordstat_main"
+            
         from pathlib import Path
         cookies_file = Path(profile_path) / "Default" / "Cookies"
         
@@ -1064,16 +1044,14 @@ class AccountsTabExtended(QWidget):
         import time
         time.sleep(1)
         
-        base_dir = Path("C:/AI/yandex")
         for row in selected_rows:
             account = self._accounts[row]
             # Берем профиль ИЗ БАЗЫ ДАННЫХ
-            profile_path = account.profile_path or f".profiles/{account.name}"
-
-            profile_path_obj = Path(profile_path)
-            if not profile_path_obj.is_absolute():
-                profile_path_obj = base_dir / profile_path_obj
-            profile_path = str(profile_path_obj).replace("\\", "/")
+            profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+            
+            # Если путь относительный - делаем полным
+            if not profile_path.startswith("C:"):
+                profile_path = f"C:/AI/yandex/{profile_path}"
             
             # Используем уникальный порт для каждого аккаунта
             port = 9222 + (hash(account.name) % 100)
@@ -1189,14 +1167,24 @@ class AccountsTabExtended(QWidget):
         selected_accounts = []
         for row in selected_rows:
             if row < len(self._accounts):
-                selected_accounts.append(self._accounts[row])
-
+                account = self._accounts[row]
+                selected_accounts.append(account.name)
+        
         self.log_action(f"Запуск {len(selected_accounts)} выбранных браузеров для парсинга...")
+        
+        # ПРАВИЛЬНЫЕ профили из Browser Management
+        profile_mapping = {
+            "dsmismirnov": "wordstat_main",  # ВАЖНО: wordstat_main!
+            "kuznepetya": "kuznepetya",
+            "semenovmsemionov": "semenovmsemionov", 
+            "vfefyodorov": "vfefyodorov",
+            "volkovsvolkow": "volkovsvolkow"
+        }
         
         # Спрашиваем подтверждение
         reply = QMessageBox.question(self, "Запуск браузеров",
             f"Будет запущено {len(selected_accounts)} браузеров с CDP портами.\n\n"
-            f"Выбранные аккаунты:\n" + "\n".join([f"  • {acc.name}" for acc in selected_accounts]) + "\n\n"
+            f"Выбранные аккаунты:\n" + "\n".join([f"  • {acc}" for acc in selected_accounts]) + "\n\n"
             f"Браузеры откроются с существующими куками.\n"
             f"НЕ БУДЕТ попыток автологина.\n"
             f"Все существующие Chrome будут закрыты.\n\n"
@@ -1216,14 +1204,22 @@ class AccountsTabExtended(QWidget):
         time.sleep(2)
         
         chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        base_path = Path("C:/AI/yandex/.profiles")
         
         # Запускаем ТОЛЬКО ВЫБРАННЫЕ браузеры
         launched = 0
         port_base = 9222
         
-        for i, account in enumerate(selected_accounts):
+        for i, account_name in enumerate(selected_accounts):
+            # Получаем правильный профиль для аккаунта
+            if account_name in profile_mapping:
+                profile = profile_mapping[account_name]
+            else:
+                # Если нет в маппинге - используем стандартный путь
+                profile = account_name
+                
             port = port_base + i
-            profile_path = Path(self._normalize_profile_path(account.profile_path, account.name))
+            profile_path = base_path / profile
             
             # Проверяем профиль
             if not profile_path.exists():
@@ -1234,9 +1230,9 @@ class AccountsTabExtended(QWidget):
             cookies_file = profile_path / "Default" / "Network" / "Cookies"
             if cookies_file.exists():
                 size_kb = cookies_file.stat().st_size / 1024
-                self.log_action(f"[{account.name}] Cookies: {size_kb:.1f}KB")
+                self.log_action(f"[{account_name}] Cookies: {size_kb:.1f}KB")
             else:
-                self.log_action(f"[{account.name}] WARNING: Cookies not found!")
+                self.log_action(f"[{account_name}] WARNING: Cookies not found!")
             
             # Запускаем Chrome с CDP БЕЗ playwright, БЕЗ автологина!
             cmd = [
@@ -1248,7 +1244,7 @@ class AccountsTabExtended(QWidget):
                 "https://wordstat.yandex.ru/?region=225"
             ]
             
-            self.log_action(f"[{account.name}] Запуск Chrome на порту {port}...")
+            self.log_action(f"[{account_name}] Запуск Chrome на порту {port}...")
             
             try:
                 subprocess.Popen(
@@ -1257,10 +1253,10 @@ class AccountsTabExtended(QWidget):
                     stderr=subprocess.DEVNULL
                 )
                 launched += 1
-                self.log_action(f"[{account.name}] ✅ Chrome запущен на порту {port}")
+                self.log_action(f"[{account_name}] ✅ Chrome запущен на порту {port}")
                 time.sleep(3)  # Задержка между запусками
             except Exception as e:
-                self.log_action(f"[{account.name}] ❌ Ошибка: {e}")
+                self.log_action(f"[{account_name}] ❌ Ошибка: {e}")
         
         if launched > 0:
             self.log_action(f"\n✅ Запущено {launched} браузеров!")
@@ -1271,7 +1267,7 @@ class AccountsTabExtended(QWidget):
             
             QMessageBox.information(self, "Успех", 
                 f"Запущено {launched} браузеров с CDP!\n\n"
-                f"Аккаунты: {', '.join(acc.name for acc in selected_accounts[:launched])}\n"
+                f"Аккаунты: {', '.join(selected_accounts)}\n"
                 f"Порты: {', '.join(ports)}\n\n"
                 f"Браузеры открыты с существующими куками.\n"
                 f"Теперь запустите парсер.")
@@ -1489,13 +1485,12 @@ class AccountsTabExtended(QWidget):
         else:
             self.edit_account()
     
-    def edit_cookies(self, row):
+    def edit_cookies(self):
         """Редактировать куки для аккаунта"""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox, QLabel
-
-        account = self._accounts[row]
-        profile_path_str = self._normalize_profile_path(account.profile_path, account.name)
-        profile_path = Path(profile_path_str)
+        
+        # Путь к профилю wordstat_main
+        profile_path = Path("C:/AI/yandex/.profiles/wordstat_main")
         
         # Создаем диалог
         dialog = QDialog(self)
@@ -1505,15 +1500,15 @@ class AccountsTabExtended(QWidget):
         layout = QVBoxLayout(dialog)
         
         # Информация
-        info = QLabel(f"""
+        info = QLabel("""
 <b>Важные куки для Wordstat:</b><br>
 • sessionid2 - основная сессия<br>
 • yandex_login - логин пользователя<br>
 • yandexuid - ID пользователя<br>
 • L - токен авторизации<br>
 <br>
-<b>Профиль:</b> {account.name}<br>
-<b>Путь:</b> {profile_path_str}
+<b>Профиль:</b> wordstat_main<br>
+<b>Путь:</b> C:\\AI\\yandex\\.profiles\\wordstat_main\\
         """)
         layout.addWidget(info)
         
@@ -1541,15 +1536,15 @@ class AccountsTabExtended(QWidget):
             # Здесь можно добавить логику сохранения куков
             # Но безопаснее логиниться через браузер
             QMessageBox.information(self, "Информация", 
-                "Для изменения куков откройте браузер с этим профилем,\n"
-                "войдите в Яндекс вручную или используйте кнопку 'Автологин'.")
-
-    def _update_profile(self, account_id, profile_key, account_name: Optional[str] = None):
+                "Для изменения куков откройте браузер с профилем wordstat_main\n"
+                "и войдите в Яндекс вручную или используйте кнопку 'Автологин'")
+    
+    def _update_profile(self, account_id, profile_key):
         """Обновить профиль для аккаунта"""
-        normalized_name = account_name if account_name else ""
-        profile_path = self._normalize_profile_path(profile_key, normalized_name)
+        profile_name = profile_key or "wordstat_main"
+        profile_path = f"C:/AI/yandex/.profiles/{profile_name}"
         account_service.update_account(account_id, profile_path=profile_path)
-        print(f"[Accounts] Профиль для аккаунта {account_id} изменён на {profile_path}")
+        print(f"[Accounts] Профиль для аккаунта {account_id} изменен на {profile_name}")
 
     def _handle_item_changed(self, item):
         """Отслеживаем изменение профиля через делегат."""
@@ -1559,17 +1554,15 @@ class AccountsTabExtended(QWidget):
         if row < 0 or row >= len(self._accounts):
             return
         account = self._accounts[row]
-        profile_value = (item.data(Qt.EditRole) or item.text() or "").strip()
-        normalized_path = self._normalize_profile_path(profile_value, account.name)
+        profile_value = item.data(Qt.EditRole) or item.text()
         options = self._profile_options(account)
-        label = self._profile_label(options, normalized_path)
+        label = self._profile_label(options, profile_value)
         self.table.blockSignals(True)
         item.setData(Qt.DisplayRole, label)
-        item.setData(Qt.EditRole, normalized_path)
         item.setText(label)
         self.table.blockSignals(False)
-        account.profile_path = normalized_path
-        self._update_profile(account.id, normalized_path, account.name)
+        account.profile_path = f"C:/AI/yandex/.profiles/{profile_value}"
+        self._update_profile(account.id, profile_value)
         
     def on_table_double_click(self, row, col):
         """Обработка двойного клика по таблице"""
@@ -1579,58 +1572,47 @@ class AccountsTabExtended(QWidget):
             
     def edit_cookies(self, row):
         """Редактировать куки для аккаунта"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox, QLabel
-
         account = self._accounts[row]
-        profile_path_str = self._normalize_profile_path(account.profile_path, account.name)
-        profile_path = Path(profile_path_str)
+        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        
+        # Если путь относительный - делаем полный
+        if not profile_path.startswith("C:"):
+            profile_path = f"C:/AI/yandex/{profile_path}"
+            
+        from pathlib import Path
+        cookies_file = Path(profile_path) / "Default" / "Cookies"
+        
+        # Создаем диалог для отображения информации о куках
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"Куки для {account.name}")
+        msg.setIcon(QMessageBox.Information)
+        
+        text = f"""
+Профиль: {profile_path.split('/')[-1]}
+Путь к куками: {cookies_file}
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Управление куками Wordstat")
-        dialog.setMinimumSize(600, 400)
-
-        layout = QVBoxLayout(dialog)
-
-        info = QLabel(f"""
-<b>Важные куки для Wordstat:</b><br>
-• sessionid2 - основная сессия<br>
-• yandex_login - логин пользователя<br>
-• yandexuid - ID пользователя<br>
-• L - токен авторизации<br>
-<br>
-<b>Профиль:</b> {account.name}<br>
-<b>Путь:</b> {profile_path_str}
-        """)
-        layout.addWidget(info)
-
-        cookies_edit = QTextEdit()
-        cookies_edit.setPlaceholderText(
-            "Вставьте куки в формате:\n"
-            "sessionid2=value1; yandex_login=value2; L=value3"
-        )
-
-        cookies_file = profile_path / "Default" / "Cookies"
+"""
+        
         if cookies_file.exists():
-            cookies_edit.setPlainText(
-                f"Файл куков существует: {cookies_file}\n"
-                f"Размер: {cookies_file.stat().st_size} bytes\n\n"
-                "[Для редактирования куков используйте браузер]"
-            )
+            stat = cookies_file.stat()
+            size_kb = stat.st_size / 1024
+            from datetime import datetime
+            age_days = (datetime.now().timestamp() - stat.st_mtime) / 86400
+            
+            text += f"""Размер файла: {size_kb:.1f} KB
+Последнее изменение: {int(age_days)} дней назад
 
-        layout.addWidget(cookies_edit)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec() == QDialog.Accepted:
-            QMessageBox.information(
-                self,
-                "Информация",
-                "Для изменения куков откройте браузер с этим профилем,\n"
-                "войдите в Яндекс вручную или используйте кнопку 'Автологин'."
-            )
+Важные куки для Wordstat:
+• sessionid2 - Основная сессия
+• yandex_login - Логин пользователя  
+• yandexuid - ID пользователя
+• L - Токен авторизации
+"""
+        else:
+            text += "Файл куков не найден!\n\nЧтобы добавить куки:\n1. Откройте Chrome с этим профилем\n2. Войдите в Яндекс\n3. Куки сохранятся автоматически"
+            
+        msg.setText(text)
+        msg.exec()
             
     def open_chrome_with_profile(self):
         """Открыть Chrome с профилем выбранного аккаунта"""
@@ -1648,12 +1630,11 @@ class AccountsTabExtended(QWidget):
         account = self._accounts[selected[0]]
         
         # Определяем профиль
-        base_dir = Path("C:/AI/yandex")
-        profile_path = account.profile_path or f".profiles/{account.name}"
-        profile_path_obj = Path(profile_path)
-        if not profile_path_obj.is_absolute():
-            profile_path_obj = base_dir / profile_path_obj
-        profile_path = str(profile_path_obj).replace("\\", "/")
+        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        
+        # Если путь относительный - делаем полный
+        if not profile_path.startswith("C:"):
+            profile_path = f"C:/AI/yandex/{profile_path}"
             
         # Запускаем Chrome
         chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"

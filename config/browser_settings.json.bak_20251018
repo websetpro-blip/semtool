@@ -5,14 +5,9 @@
     "accounts": [
         {
             "name": "dsmismirnov",
-            "profile_path": "C:/AI/yandex/.profiles/wordstat_main",
+            "profile_path": "C:/AI/yandex/.profiles/dsmismirnov",
             "cdp_port": 9222,
-            "window_position": {
-                "x": 0,
-                "y": 0,
-                "width": 960,
-                "height": 1080
-            },
+            "window_position": {"x": 0, "y": 0, "width": 960, "height": 1080},
             "proxy": "http://213.139.221.13:9620@Nuj2eh:M6FEcS",
             "status": "working"
         },
@@ -20,48 +15,28 @@
             "name": "kuznepetya",
             "profile_path": "C:/AI/yandex/.profiles/kuznepetya",
             "cdp_port": 9223,
-            "window_position": {
-                "x": 960,
-                "y": 0,
-                "width": 960,
-                "height": 1080
-            },
+            "window_position": {"x": 960, "y": 0, "width": 960, "height": 1080},
             "proxy": "http://213.139.221.165:9041@Nuj2eh:M6FEcS"
         },
         {
             "name": "vfefyodorov",
             "profile_path": "C:/AI/yandex/.profiles/vfefyodorov",
             "cdp_port": 9224,
-            "window_position": {
-                "x": 0,
-                "y": 540,
-                "width": 960,
-                "height": 540
-            },
+            "window_position": {"x": 0, "y": 540, "width": 960, "height": 540},
             "proxy": "http://213.139.223.16:9739@Nuj2eh:M6FEcS"
         },
         {
             "name": "volkovsvolkow",
             "profile_path": "C:/AI/yandex/.profiles/volkovsvolkow",
             "cdp_port": 9225,
-            "window_position": {
-                "x": 960,
-                "y": 540,
-                "width": 960,
-                "height": 540
-            },
+            "window_position": {"x": 960, "y": 540, "width": 960, "height": 540},
             "proxy": "http://213.139.223.21:9373@Nuj2eh:M6FEcS"
         },
         {
             "name": "semenovmsemionov",
             "profile_path": "C:/AI/yandex/.profiles/semenovmsemionov",
             "cdp_port": 9226,
-            "window_position": {
-                "x": 480,
-                "y": 270,
-                "width": 960,
-                "height": 540
-            },
+            "window_position": {"x": 480, "y": 270, "width": 960, "height": 540},
             "proxy": "http://213.139.222.209:9090@Nuj2eh:M6FEcS"
         }
     ],

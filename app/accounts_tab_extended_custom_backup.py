@@ -8,11 +8,14 @@
 """
 
 import asyncio
+import json
+import re
 import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from itertools import cycle
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtWidgets import (
@@ -120,12 +123,9 @@ class AutoLoginThread(QThread):
 
         self.status_signal.emit(f"[OK] Профиль РёР· Р'Р]: {profile_path}")
 
-        base_dir = Path("C:/AI/yandex")
-        profile_path_obj = Path(profile_path)
-        if not profile_path_obj.is_absolute():
-            profile_path_obj = base_dir / profile_path_obj
-        profile_path = str(profile_path_obj).replace("\\", "/")
-        self.status_signal.emit(f"[INFO] Используем профиль: {profile_path}")
+        if not profile_path.startswith("C:"):
+            profile_path = f"C:/AI/yandex/{profile_path}"
+            self.status_signal.emit(f"[INFO] Путь преобразован: {profile_path}")
 
         accounts_file = Path("C:/AI/yandex/configs/accounts.json")
         if not accounts_file.exists():
@@ -324,11 +324,22 @@ class AccountsTabExtended(QWidget):
     """Расширенная вкладка аккаунтов с функцией логина"""
     accounts_changed = Signal()
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
         self.login_thread = None
         self._current_login_index = 0
+        self.captcha_api_key = None
+        self._config_dir = Path("C:/AI/yandex/configs")
+        self._accounts_json_path = self._config_dir / "accounts.json"
+        self._captcha_key_path = self._config_dir / "captcha_key.txt"
+        self.default_import_path = Path("C:/AI/yandex/новое/Акки, капча, прокси ip 4")
+        self.captcha_api_key = self._load_captcha_key()
         self.setup_ui()
+        if not self._accounts and self.default_import_path.exists():
+            try:
+                self._import_from_file(self.default_import_path, silent=True)
+            except Exception as exc:
+                self.log_action(f"⚠️ Автоимпорт аккаунтов не выполнен: {exc}")
         
     def setup_ui(self):
         """Создание интерфейса"""
@@ -557,6 +568,146 @@ class AccountsTabExtended(QWidget):
         main_window = self.window()
         if hasattr(main_window, 'log_message'):
             main_window.log_message(message, "INFO")
+        elif hasattr(main_window, 'log_event'):
+            main_window.log_event(message, "INFO")
+
+    # ------------------------------------------------------------------ helpers: данные/конфигурация
+    def _load_captcha_key(self) -> Optional[str]:
+        try:
+            if self._captcha_key_path.exists():
+                key = self._captcha_key_path.read_text(encoding="utf-8").strip()
+                return key or None
+        except Exception as exc:  # pragma: no cover
+            print(f"[Accounts] Не удалось прочитать captcha_key: {exc}")
+        return None
+
+    def _save_captcha_key(self, key: str) -> None:
+        try:
+            self._config_dir.mkdir(parents=True, exist_ok=True)
+            self._captcha_key_path.write_text(key.strip(), encoding="utf-8")
+            self.captcha_api_key = key.strip()
+        except Exception as exc:  # pragma: no cover
+            self.log_action(f"⚠️ Не удалось сохранить ключ капчи: {exc}")
+
+    def _load_accounts_json(self) -> List[Dict[str, Any]]:
+        if not self._accounts_json_path.exists():
+            return []
+        try:
+            return json.loads(self._accounts_json_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # pragma: no cover
+            self.log_action(f"⚠️ Не удалось прочитать accounts.json: {exc}")
+            return []
+
+    def _save_accounts_json(self, payload: List[Dict[str, Any]]) -> None:
+        try:
+            self._config_dir.mkdir(parents=True, exist_ok=True)
+            self._accounts_json_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:  # pragma: no cover
+            self.log_action(f"⚠️ Не удалось сохранить accounts.json: {exc}")
+
+    def _parse_account_file(self, path: Path) -> Dict[str, Any]:
+        text = path.read_text(encoding="utf-8")
+        lines = [line.strip() for line in text.splitlines()]
+        non_empty = [line for line in lines if line]
+
+        captcha_key = None
+        for raw in non_empty:
+            lower = raw.lower()
+            if "капча" in lower:
+                match = re.search(r'([0-9a-f]{20,})', raw, re.IGNORECASE)
+                if match:
+                    captcha_key = match.group(1)
+                    break
+
+        proxies: list[str] = []
+        idx = 0
+        while idx < len(non_empty):
+            line = non_empty[idx]
+            if re.match(r'\d{1,3}(?:\.\d{1,3}){3}:\d+', line):
+                ip_port = line
+                user = non_empty[idx + 1] if idx + 1 < len(non_empty) else ""
+                pwd = non_empty[idx + 2] if idx + 2 < len(non_empty) else ""
+                if re.match(r'^[A-Za-z0-9]+$', user) and re.match(r'^[A-Za-z0-9]+$', pwd):
+                    proxies.append(f"{user}:{pwd}@{ip_port}")
+                    idx += 3
+                    continue
+                proxies.append(ip_port)
+            idx += 1
+
+        accounts: list[Dict[str, Any]] = []
+        current: Dict[str, Any] = {}
+        for raw in lines:
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            lower = stripped.lower()
+            if lower.startswith("логин:"):
+                if current.get("login") and current.get("password"):
+                    accounts.append(current)
+                current = {"login": stripped.split(":", 1)[1].strip()}
+            elif lower.startswith("пароль:"):
+                current["password"] = stripped.split(":", 1)[1].strip()
+            elif lower.startswith("секрет"):
+                current["secret"] = stripped.split(":", 1)[1].strip()
+        if current.get("login") and current.get("password"):
+            accounts.append(current)
+
+        return {"captcha_key": captcha_key, "proxies": proxies, "accounts": accounts}
+
+    def _import_from_file(self, path: Path, silent: bool = False) -> None:
+        bundle = self._parse_account_file(path)
+        accounts = bundle.get("accounts") or []
+        if not accounts:
+            raise ValueError("Не найдено аккаунтов в файле")
+
+        proxies = bundle.get("proxies") or [None]
+        proxy_cycle = cycle(proxies)
+        captcha_key = bundle.get("captcha_key")
+
+        json_entries = {entry["login"]: entry for entry in self._load_accounts_json() if entry.get("login")}
+        created = 0
+
+        for account_data in accounts:
+            login = account_data["login"]
+            password = account_data.get("password", "")
+            secret = account_data.get("secret")
+            proxy_value = next(proxy_cycle)
+            profile_path = Path(f"C:/AI/yandex/.profiles/{login}")
+            profile_path.mkdir(parents=True, exist_ok=True)
+
+            db_account = account_service.upsert_account(
+                name=login,
+                profile_path=str(profile_path),
+                proxy=proxy_value,
+            )
+            if captcha_key:
+                account_service.update_account(db_account.id, captcha_key=captcha_key)
+
+            entry = json_entries.get(login, {"login": login})
+            entry["password"] = password
+            entry["secret"] = secret
+            if proxy_value:
+                entry["proxy"] = proxy_value
+            answers = entry.get("secret_answers") or {}
+            if secret:
+                answers["default"] = secret
+                answers["Секретный ответ"] = secret
+            entry["secret_answers"] = answers
+            json_entries[login] = entry
+            created += 1
+
+        self._save_accounts_json(list(json_entries.values()))
+        if captcha_key:
+            self._save_captcha_key(captcha_key)
+
+        self.refresh()
+        self.accounts_changed.emit()
+        self.log_action(f"Импортировано {created} аккаунтов из {path.name}")
+        if not silent:
+            QMessageBox.information(self, "Импорт", f"Импортировано {created} аккаунтов")
     
     def _selected_rows(self) -> List[int]:
         """Получить выбранные строки"""
@@ -589,9 +740,9 @@ class AccountsTabExtended(QWidget):
     
     def refresh(self):
         """Обновить таблицу аккаунтов"""
-        # Получаем аккаунты и фильтруем demo_account
+        # Получаем аккаунты и фильтруем demo_account и wordstat_main (это профиль, а не аккаунт)
         all_accounts = account_service.list_accounts()
-        self._accounts = [acc for acc in all_accounts if acc.name != "demo_account"]
+        self._accounts = [acc for acc in all_accounts if acc.name not in ["demo_account", "wordstat_main"]]
         self.table.setRowCount(len(self._accounts))
         
         self.log_action(f"Загружено: {len(self._accounts)} аккаунтов")
@@ -633,43 +784,21 @@ class AccountsTabExtended(QWidget):
         self.table.blockSignals(False)
         self._update_buttons()
 
-    @staticmethod
-    def _normalize_profile_path(value: Optional[str], account_name: str) -> str:
-        """Привести значение профиля к абсолютному пути."""
-        base_dir = Path("C:/AI/yandex")
-
-        if value:
-            raw = Path(str(value).strip())
-        else:
-            raw = Path(".profiles") / account_name
-
-        if str(raw).startswith(".profiles"):
-            raw = base_dir / raw
-        elif not raw.is_absolute():
-            raw = base_dir / ".profiles" / raw
-
-        return str(raw).replace("\\", "/")
-
-    @staticmethod
-    def _format_profile_label(path: str, subtitle: str = "") -> str:
-        tail = Path(path).name
-        hint = f" {subtitle}" if subtitle else ""
-        return f"{tail}{hint} — {path}"
-
     def _profile_options(self, account):
         """Сформировать список доступных профилей для аккаунта."""
-        current = self._normalize_profile_path(account.profile_path, account.name)
-        options = [(current, self._format_profile_label(current, "(текущий)"))]
-
-        personal_default = self._normalize_profile_path(f".profiles/{account.name}", account.name)
-        if personal_default not in {opt[0] for opt in options}:
-            options.append((personal_default, self._format_profile_label(personal_default)))
-
+        options = [(account.name, f"{account.name} (личный)")]
+        if account.name != "wordstat_main":
+            options.append(("wordstat_main", "wordstat_main (общий)"))
         return options
 
     def _profile_value_from_account(self, account):
         """Определить текущий профиль из пути аккаунта."""
-        return self._normalize_profile_path(account.profile_path, account.name)
+        if not account.profile_path:
+            return account.name
+        profile_name = Path(account.profile_path).name
+        if "wordstat_main" in profile_name:
+            return "wordstat_main"
+        return profile_name or account.name
 
     @staticmethod
     def _profile_label(options, value):
@@ -677,7 +806,7 @@ class AccountsTabExtended(QWidget):
         for option_value, label in options:
             if option_value == value:
                 return label
-        return AccountsTabExtended._format_profile_label(value)
+        return value
     
     def _get_status_label(self, status):
         """Получить метку статуса"""
@@ -722,7 +851,12 @@ class AccountsTabExtended(QWidget):
     def _get_auth_status(self, account):
         """Получить статус авторизации"""
         # Проверяем куки в выбранном профиле
-        profile_path = self._normalize_profile_path(account.profile_path, account.name)
+        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        
+        # Если используем wordstat_main - проверяем куки там
+        if "wordstat_main" in profile_path:
+            profile_path = "C:/AI/yandex/.profiles/wordstat_main"
+            
         from pathlib import Path
         cookies_file = Path(profile_path) / "Default" / "Cookies"
         
@@ -893,8 +1027,7 @@ class AccountsTabExtended(QWidget):
         
         if filename:
             try:
-                # TODO: Реализовать импорт
-                QMessageBox.information(self, "Импорт", "Функция в разработке")
+                self._import_from_file(Path(filename))
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка импорта", str(e))
     
@@ -977,69 +1110,72 @@ class AccountsTabExtended(QWidget):
     
     def check_captcha_balance(self):
         """Проверить баланс RuCaptcha"""
-        # Пока используем общий ключ из файла
-        # TODO: В будущем брать ключ из поля captcha_key аккаунта
-        CAPTCHA_KEY = "8f00b4cb9b77d982abb77260a168f976"
-        
+        captcha_key = self.captcha_api_key or self._load_captcha_key()
+        if not captcha_key:
+            QMessageBox.warning(self, "Баланс капчи", "Не задан API-ключ RuCaptcha. Импортируйте аккаунты с ключом или сохраните его вручную.")
+            return
+
         from ..services.captcha import RuCaptchaClient
         import asyncio
-        
-        # Создаем диалог прогресса
+        from threading import Thread
+
         progress_dialog = QMessageBox(self)
         progress_dialog.setWindowTitle("Проверка баланса капчи")
         progress_dialog.setText("Проверка баланса RuCaptcha...\n\nОжидайте...")
         progress_dialog.setStandardButtons(QMessageBox.NoButton)
         progress_dialog.setModal(True)
         progress_dialog.show()
-        
-        # Запускаем проверку в отдельном потоке
-        def run_check():
+
+        result_container: Dict[str, Any] = {}
+
+        def check_task() -> None:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            client = RuCaptchaClient(CAPTCHA_KEY)
-            result = loop.run_until_complete(client.get_balance())
-            loop.close()
-            return result
-        
-        from threading import Thread
-        result_container = {}
-        
-        def check_thread():
-            result_container['result'] = run_check()
-        
-        thread = Thread(target=check_thread)
+            client = RuCaptchaClient(captcha_key)
+            try:
+                balance = loop.run_until_complete(client.get_balance())
+                result_container["result"] = balance
+            except Exception as exc:
+                result_container["error"] = str(exc)
+            finally:
+                loop.close()
+
+        thread = Thread(target=check_task)
         thread.start()
-        thread.join(timeout=15)
-        
+        thread.join(timeout=20)
         progress_dialog.close()
-        
-        # Показываем результат
-        if 'result' not in result_container:
-            QMessageBox.warning(self, "Ошибка", "Проверка баланса заняла слишком много времени (>15 сек)")
+
+        if "error" in result_container:
+            QMessageBox.warning(self, "Ошибка капчи", f"Не удалось получить баланс: {result_container['error']}")
             return
-        
-        result = result_container['result']
-        
-        if result['ok']:
-            balance = result['balance']
-            msg = f"✅ RuCaptcha баланс\n\n"
-            msg += f"Ключ: {CAPTCHA_KEY[:20]}...\n"
-            msg += f"Баланс: {balance:.2f} руб\n\n"
-            
-            # Прикинем сколько капч можно решить
-            price_per_captcha = 0.10  # примерно 10 копеек за капчу
-            captchas_available = int(balance / price_per_captcha)
-            msg += f"Примерно {captchas_available} капч можно решить"
-            
-            QMessageBox.information(self, "Баланс капчи", msg)
-            self.log_action(f"RuCaptcha баланс: {balance:.2f} руб (~{captchas_available} капч)")
-        else:
-            msg = f"❌ Ошибка проверки баланса!\n\n"
-            msg += f"Ключ: {CAPTCHA_KEY[:20]}...\n"
-            msg += f"Ошибка: {result['error']}"
-            QMessageBox.warning(self, "Ошибка капчи", msg)
-            self.log_action(f"RuCaptcha ошибка: {result['error']}")
-    
+        if "result" not in result_container:
+            QMessageBox.warning(self, "Ошибка капчи", "Проверка баланса заняла слишком много времени (>20 сек).")
+            return
+
+        balance = result_container["result"]
+        if isinstance(balance, dict) and "error" in balance:
+            error_text = balance.get('error')
+            message = f"❌ Ошибка проверки баланса!\n\nКлюч: {captcha_key[:20]}...\nОшибка: {error_text}"
+            QMessageBox.warning(self, "Ошибка капчи", message)
+            self.log_action(f"Ошибка проверки капчи: {error_text}")
+            return
+
+        try:
+            balance_value = float(balance)
+        except (TypeError, ValueError):
+            QMessageBox.warning(self, "Ошибка капчи", f"Некорректный ответ от сервиса: {balance}")
+            return
+
+        message = (
+            f"✅ RuCaptcha баланс\n\n"
+            f"Ключ: {captcha_key[:20]}...\n"
+            f"Баланс: {balance_value:.2f} руб\n\n"
+            "Можно использовать для автологина и решения капч."
+        )
+        QMessageBox.information(self, "Баланс капчи", message)
+        self.log_action(f"Баланс капчи: {balance_value:.2f} руб")
+
+
     def login_selected(self):
         """Открыть Chrome с CDP для ручного логина"""
         selected_rows = self._selected_rows()
@@ -1064,16 +1200,14 @@ class AccountsTabExtended(QWidget):
         import time
         time.sleep(1)
         
-        base_dir = Path("C:/AI/yandex")
         for row in selected_rows:
             account = self._accounts[row]
             # Берем профиль ИЗ БАЗЫ ДАННЫХ
-            profile_path = account.profile_path or f".profiles/{account.name}"
-
-            profile_path_obj = Path(profile_path)
-            if not profile_path_obj.is_absolute():
-                profile_path_obj = base_dir / profile_path_obj
-            profile_path = str(profile_path_obj).replace("\\", "/")
+            profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+            
+            # Если путь относительный - делаем полным
+            if not profile_path.startswith("C:"):
+                profile_path = f"C:/AI/yandex/{profile_path}"
             
             # Используем уникальный порт для каждого аккаунта
             port = 9222 + (hash(account.name) % 100)
@@ -1189,14 +1323,24 @@ class AccountsTabExtended(QWidget):
         selected_accounts = []
         for row in selected_rows:
             if row < len(self._accounts):
-                selected_accounts.append(self._accounts[row])
-
+                account = self._accounts[row]
+                selected_accounts.append(account.name)
+        
         self.log_action(f"Запуск {len(selected_accounts)} выбранных браузеров для парсинга...")
+        
+        # ПРАВИЛЬНЫЕ профили из Browser Management
+        profile_mapping = {
+            "dsmismirnov": "wordstat_main",  # ВАЖНО: wordstat_main!
+            "kuznepetya": "kuznepetya",
+            "semenovmsemionov": "semenovmsemionov", 
+            "vfefyodorov": "vfefyodorov",
+            "volkovsvolkow": "volkovsvolkow"
+        }
         
         # Спрашиваем подтверждение
         reply = QMessageBox.question(self, "Запуск браузеров",
             f"Будет запущено {len(selected_accounts)} браузеров с CDP портами.\n\n"
-            f"Выбранные аккаунты:\n" + "\n".join([f"  • {acc.name}" for acc in selected_accounts]) + "\n\n"
+            f"Выбранные аккаунты:\n" + "\n".join([f"  • {acc}" for acc in selected_accounts]) + "\n\n"
             f"Браузеры откроются с существующими куками.\n"
             f"НЕ БУДЕТ попыток автологина.\n"
             f"Все существующие Chrome будут закрыты.\n\n"
@@ -1216,14 +1360,22 @@ class AccountsTabExtended(QWidget):
         time.sleep(2)
         
         chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        base_path = Path("C:/AI/yandex/.profiles")
         
         # Запускаем ТОЛЬКО ВЫБРАННЫЕ браузеры
         launched = 0
         port_base = 9222
         
-        for i, account in enumerate(selected_accounts):
+        for i, account_name in enumerate(selected_accounts):
+            # Получаем правильный профиль для аккаунта
+            if account_name in profile_mapping:
+                profile = profile_mapping[account_name]
+            else:
+                # Если нет в маппинге - используем стандартный путь
+                profile = account_name
+                
             port = port_base + i
-            profile_path = Path(self._normalize_profile_path(account.profile_path, account.name))
+            profile_path = base_path / profile
             
             # Проверяем профиль
             if not profile_path.exists():
@@ -1234,9 +1386,9 @@ class AccountsTabExtended(QWidget):
             cookies_file = profile_path / "Default" / "Network" / "Cookies"
             if cookies_file.exists():
                 size_kb = cookies_file.stat().st_size / 1024
-                self.log_action(f"[{account.name}] Cookies: {size_kb:.1f}KB")
+                self.log_action(f"[{account_name}] Cookies: {size_kb:.1f}KB")
             else:
-                self.log_action(f"[{account.name}] WARNING: Cookies not found!")
+                self.log_action(f"[{account_name}] WARNING: Cookies not found!")
             
             # Запускаем Chrome с CDP БЕЗ playwright, БЕЗ автологина!
             cmd = [
@@ -1248,7 +1400,7 @@ class AccountsTabExtended(QWidget):
                 "https://wordstat.yandex.ru/?region=225"
             ]
             
-            self.log_action(f"[{account.name}] Запуск Chrome на порту {port}...")
+            self.log_action(f"[{account_name}] Запуск Chrome на порту {port}...")
             
             try:
                 subprocess.Popen(
@@ -1257,10 +1409,10 @@ class AccountsTabExtended(QWidget):
                     stderr=subprocess.DEVNULL
                 )
                 launched += 1
-                self.log_action(f"[{account.name}] ✅ Chrome запущен на порту {port}")
+                self.log_action(f"[{account_name}] ✅ Chrome запущен на порту {port}")
                 time.sleep(3)  # Задержка между запусками
             except Exception as e:
-                self.log_action(f"[{account.name}] ❌ Ошибка: {e}")
+                self.log_action(f"[{account_name}] ❌ Ошибка: {e}")
         
         if launched > 0:
             self.log_action(f"\n✅ Запущено {launched} браузеров!")
@@ -1271,7 +1423,7 @@ class AccountsTabExtended(QWidget):
             
             QMessageBox.information(self, "Успех", 
                 f"Запущено {launched} браузеров с CDP!\n\n"
-                f"Аккаунты: {', '.join(acc.name for acc in selected_accounts[:launched])}\n"
+                f"Аккаунты: {', '.join(selected_accounts)}\n"
                 f"Порты: {', '.join(ports)}\n\n"
                 f"Браузеры открыты с существующими куками.\n"
                 f"Теперь запустите парсер.")
@@ -1489,13 +1641,12 @@ class AccountsTabExtended(QWidget):
         else:
             self.edit_account()
     
-    def edit_cookies(self, row):
+    def edit_cookies(self):
         """Редактировать куки для аккаунта"""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox, QLabel
-
-        account = self._accounts[row]
-        profile_path_str = self._normalize_profile_path(account.profile_path, account.name)
-        profile_path = Path(profile_path_str)
+        
+        # Путь к профилю wordstat_main
+        profile_path = Path("C:/AI/yandex/.profiles/wordstat_main")
         
         # Создаем диалог
         dialog = QDialog(self)
@@ -1505,15 +1656,15 @@ class AccountsTabExtended(QWidget):
         layout = QVBoxLayout(dialog)
         
         # Информация
-        info = QLabel(f"""
+        info = QLabel("""
 <b>Важные куки для Wordstat:</b><br>
 • sessionid2 - основная сессия<br>
 • yandex_login - логин пользователя<br>
 • yandexuid - ID пользователя<br>
 • L - токен авторизации<br>
 <br>
-<b>Профиль:</b> {account.name}<br>
-<b>Путь:</b> {profile_path_str}
+<b>Профиль:</b> wordstat_main<br>
+<b>Путь:</b> C:\\AI\\yandex\\.profiles\\wordstat_main\\
         """)
         layout.addWidget(info)
         
@@ -1541,15 +1692,15 @@ class AccountsTabExtended(QWidget):
             # Здесь можно добавить логику сохранения куков
             # Но безопаснее логиниться через браузер
             QMessageBox.information(self, "Информация", 
-                "Для изменения куков откройте браузер с этим профилем,\n"
-                "войдите в Яндекс вручную или используйте кнопку 'Автологин'.")
-
-    def _update_profile(self, account_id, profile_key, account_name: Optional[str] = None):
+                "Для изменения куков откройте браузер с профилем wordstat_main\n"
+                "и войдите в Яндекс вручную или используйте кнопку 'Автологин'")
+    
+    def _update_profile(self, account_id, profile_key):
         """Обновить профиль для аккаунта"""
-        normalized_name = account_name if account_name else ""
-        profile_path = self._normalize_profile_path(profile_key, normalized_name)
+        profile_name = profile_key or "wordstat_main"
+        profile_path = f"C:/AI/yandex/.profiles/{profile_name}"
         account_service.update_account(account_id, profile_path=profile_path)
-        print(f"[Accounts] Профиль для аккаунта {account_id} изменён на {profile_path}")
+        print(f"[Accounts] Профиль для аккаунта {account_id} изменен на {profile_name}")
 
     def _handle_item_changed(self, item):
         """Отслеживаем изменение профиля через делегат."""
@@ -1559,17 +1710,15 @@ class AccountsTabExtended(QWidget):
         if row < 0 or row >= len(self._accounts):
             return
         account = self._accounts[row]
-        profile_value = (item.data(Qt.EditRole) or item.text() or "").strip()
-        normalized_path = self._normalize_profile_path(profile_value, account.name)
+        profile_value = item.data(Qt.EditRole) or item.text()
         options = self._profile_options(account)
-        label = self._profile_label(options, normalized_path)
+        label = self._profile_label(options, profile_value)
         self.table.blockSignals(True)
         item.setData(Qt.DisplayRole, label)
-        item.setData(Qt.EditRole, normalized_path)
         item.setText(label)
         self.table.blockSignals(False)
-        account.profile_path = normalized_path
-        self._update_profile(account.id, normalized_path, account.name)
+        account.profile_path = f"C:/AI/yandex/.profiles/{profile_value}"
+        self._update_profile(account.id, profile_value)
         
     def on_table_double_click(self, row, col):
         """Обработка двойного клика по таблице"""
@@ -1579,58 +1728,47 @@ class AccountsTabExtended(QWidget):
             
     def edit_cookies(self, row):
         """Редактировать куки для аккаунта"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox, QLabel
-
         account = self._accounts[row]
-        profile_path_str = self._normalize_profile_path(account.profile_path, account.name)
-        profile_path = Path(profile_path_str)
+        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        
+        # Если путь относительный - делаем полный
+        if not profile_path.startswith("C:"):
+            profile_path = f"C:/AI/yandex/{profile_path}"
+            
+        from pathlib import Path
+        cookies_file = Path(profile_path) / "Default" / "Cookies"
+        
+        # Создаем диалог для отображения информации о куках
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"Куки для {account.name}")
+        msg.setIcon(QMessageBox.Information)
+        
+        text = f"""
+Профиль: {profile_path.split('/')[-1]}
+Путь к куками: {cookies_file}
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Управление куками Wordstat")
-        dialog.setMinimumSize(600, 400)
-
-        layout = QVBoxLayout(dialog)
-
-        info = QLabel(f"""
-<b>Важные куки для Wordstat:</b><br>
-• sessionid2 - основная сессия<br>
-• yandex_login - логин пользователя<br>
-• yandexuid - ID пользователя<br>
-• L - токен авторизации<br>
-<br>
-<b>Профиль:</b> {account.name}<br>
-<b>Путь:</b> {profile_path_str}
-        """)
-        layout.addWidget(info)
-
-        cookies_edit = QTextEdit()
-        cookies_edit.setPlaceholderText(
-            "Вставьте куки в формате:\n"
-            "sessionid2=value1; yandex_login=value2; L=value3"
-        )
-
-        cookies_file = profile_path / "Default" / "Cookies"
+"""
+        
         if cookies_file.exists():
-            cookies_edit.setPlainText(
-                f"Файл куков существует: {cookies_file}\n"
-                f"Размер: {cookies_file.stat().st_size} bytes\n\n"
-                "[Для редактирования куков используйте браузер]"
-            )
+            stat = cookies_file.stat()
+            size_kb = stat.st_size / 1024
+            from datetime import datetime
+            age_days = (datetime.now().timestamp() - stat.st_mtime) / 86400
+            
+            text += f"""Размер файла: {size_kb:.1f} KB
+Последнее изменение: {int(age_days)} дней назад
 
-        layout.addWidget(cookies_edit)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec() == QDialog.Accepted:
-            QMessageBox.information(
-                self,
-                "Информация",
-                "Для изменения куков откройте браузер с этим профилем,\n"
-                "войдите в Яндекс вручную или используйте кнопку 'Автологин'."
-            )
+Важные куки для Wordstat:
+• sessionid2 - Основная сессия
+• yandex_login - Логин пользователя  
+• yandexuid - ID пользователя
+• L - Токен авторизации
+"""
+        else:
+            text += "Файл куков не найден!\n\nЧтобы добавить куки:\n1. Откройте Chrome с этим профилем\n2. Войдите в Яндекс\n3. Куки сохранятся автоматически"
+            
+        msg.setText(text)
+        msg.exec()
             
     def open_chrome_with_profile(self):
         """Открыть Chrome с профилем выбранного аккаунта"""
@@ -1648,12 +1786,11 @@ class AccountsTabExtended(QWidget):
         account = self._accounts[selected[0]]
         
         # Определяем профиль
-        base_dir = Path("C:/AI/yandex")
-        profile_path = account.profile_path or f".profiles/{account.name}"
-        profile_path_obj = Path(profile_path)
-        if not profile_path_obj.is_absolute():
-            profile_path_obj = base_dir / profile_path_obj
-        profile_path = str(profile_path_obj).replace("\\", "/")
+        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        
+        # Если путь относительный - делаем полный
+        if not profile_path.startswith("C:"):
+            profile_path = f"C:/AI/yandex/{profile_path}"
             
         # Запускаем Chrome
         chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"

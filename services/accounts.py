@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any
+import time
 
 from sqlalchemy import select
 
@@ -179,26 +180,39 @@ def get_cookies_status(account: Account) -> str:
     Returns:
         "None" | "Fresh" | "Expired"
     """
-    # Куки хранятся в runtime/profiles/<name>.json (storage_state Playwright)
-    profile_path = Path(account.profile_path)
-    cookies_file = profile_path / "cookies.json"  # или storage_state.json
-    
-    # Проверяем несколько вариантов
-    for possible_file in [
-        cookies_file,
-        profile_path / "storage_state.json",
-        profile_path / "state.json"
-    ]:
-        if possible_file.exists():
-            age_seconds = time.time() - possible_file.stat().st_mtime
-            age_days = age_seconds / (24 * 3600)
-            
-            if age_days < 7:
-                return "Fresh"
+    raw_path = account.profile_path or ""
+    if not raw_path:
+        return "Нет профиля"
+
+    profile_path = Path(raw_path)
+    if not profile_path.is_absolute():
+        profile_path = Path("C:/AI/yandex").joinpath(profile_path)
+
+    candidates = [
+        ("Chrome", profile_path / "Default" / "Network" / "Cookies"),
+        ("Chrome", profile_path / "Default" / "Cookies"),
+        ("state", profile_path / "storage_state.json"),
+        ("state", profile_path / "state.json"),
+        ("state", profile_path / "cookies.json"),
+    ]
+
+    for source, cookie_path in candidates:
+        if cookie_path.exists():
+            stat = cookie_path.stat()
+            size_kb = stat.st_size / 1024
+            age_days = max(0.0, (time.time() - stat.st_mtime) / 86400)
+
+            if age_days < 3:
+                freshness = "Fresh"
+            elif age_days < 14:
+                freshness = "Stale"
             else:
-                return "Expired"
-    
-    return "None"
+                freshness = "Expired"
+
+            label = f"{size_kb:.1f}KB {source} ({freshness})"
+            return label
+
+    return "Нет куков"
 
 
 async def autologin_account(account: Account) -> Dict[str, Any]:
@@ -266,4 +280,44 @@ async def autologin_account(account: Account) -> Dict[str, Any]:
             
     except Exception as e:
         return {"ok": False, "message": f"Ошибка: {e}"}
+
+
+# ---------------------------------------------------------------------------
+# Lightweight helpers for the new parsing UI
+# ---------------------------------------------------------------------------
+
+
+def list_profiles() -> list[str]:
+    """Return account names ordered alphabetically for the toolbar drop-down."""
+    accounts = list_accounts()
+    return [account.name for account in accounts] or ["Текущий"]
+
+
+def get_profile_ctx(name: str | None) -> dict[str, str | None]:
+    """Return storage state / proxy information for a given account name."""
+    if not name:
+        return {"storage_state": None, "proxy": None}
+
+    with SessionLocal() as session:
+        stmt = select(Account).where(Account.name == name)
+        account = session.execute(stmt).scalar_one_or_none()
+        if not account:
+            return {"storage_state": None, "proxy": None}
+        profile_path = Path(account.profile_path)
+        if not profile_path.is_absolute():
+            profile_path = Path("C:/AI/yandex").joinpath(profile_path)
+        storage_file = None
+        for candidate in [
+            profile_path / "storage_state.json",
+            profile_path / "state.json",
+            profile_path / "Default" / "storage_state.json",
+        ]:
+            if candidate.exists():
+                storage_file = str(candidate)
+                break
+        return {
+            "storage_state": storage_file,
+            "proxy": account.proxy,
+        }
+
 

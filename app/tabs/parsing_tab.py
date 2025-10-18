@@ -1,322 +1,370 @@
-# app/tabs/parsing_tab.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QSplitter, QPushButton,
-                               QTextEdit, QLabel, QSpinBox, QCheckBox, QComboBox, QTableWidget, 
-                               QTableWidgetItem, QProgressBar)
-from PySide6.QtCore import Qt, QThread, Signal
-from ..widgets.geo_tree import GeoTree
-from ..keys_panel import KeysPanel  # Используем существующий KeysPanel
+
+import random
 import time
+from collections import defaultdict
+from typing import Optional
+
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QSplitter,
+    QPushButton,
+    QTextEdit,
+    QLabel,
+    QSpinBox,
+    QCheckBox,
+    QComboBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QProgressBar,
+    QFileDialog,
+)
+
+from ..widgets.geo_tree import GeoTree
+from ..keys_panel import KeysPanel
+from ...services.accounts import list_profiles, get_profile_ctx
+from ...services.wordstat_bridge import collect_frequency, collect_depth, collect_forecast
+
 
 class ParsingWorker(QThread):
-    """Воркер для парсинга в отдельном потоке"""
-    tick = Signal(dict)      # события для UI
-    done = Signal(list)      # финальный результат
-    
-    def __init__(self, phrases: list[str], modes: dict, depth_cfg: dict, geo_ids: list[int], parent=None):
+    """Фоновый запуск частотки / вглубь в отдельном потоке."""
+
+    tick = Signal(dict)
+    finished = Signal(list)
+
+    def __init__(
+        self,
+        mode: str,
+        phrases: list[str],
+        modes: dict,
+        depth_cfg: dict,
+        geo_ids: list[int],
+        profile: Optional[str],
+        profile_ctx: Optional[dict],
+        parent: QWidget | None,
+    ):
         super().__init__(parent)
+        self._mode = mode
         self.phrases = phrases
         self.modes = modes
         self.depth_cfg = depth_cfg
-        self.geo_ids = geo_ids
-        self._stop = False
-    
-    def stop(self):
-        self._stop = True
-    
-    def run(self):
-        """Основной цикл парсинга"""
-        # Здесь вызываем существующие сервисы
+        self.geo_ids = geo_ids or [225]
+        self.profile = profile
+        self.profile_ctx = profile_ctx or {}
+        self._stop_requested = False
+
+    def stop(self) -> None:
+        self._stop_requested = True
+
+    def run(self) -> None:  # type: ignore[override]
         try:
-            from ...services import frequency as freq_service
-        except ImportError:
-            # Фоллбэк для тестирования
-            freq_service = None
-        
-        rows = []
-        total = len(self.phrases)
-        
-        for i, phrase in enumerate(self.phrases, start=1):
-            if self._stop:
-                break
-            
-            rec = {"phrase": phrase}
-            
-            # Собираем частотности
-            if freq_service:
-                if self.modes.get("ws"):
-                    # Базовая частотность
-                    try:
-                        result = freq_service.parse_frequency([phrase], self.geo_ids[0] if self.geo_ids else 225)
-                        rec["ws"] = result[0].get("freq_total", 0) if result else 0
-                    except Exception:
-                        rec["ws"] = 0
-                
-                if self.modes.get("qws"):
-                    # В кавычках
-                    try:
-                        result = freq_service.parse_frequency([f'"{phrase}"'], self.geo_ids[0] if self.geo_ids else 225)
-                        rec["qws"] = result[0].get("freq_quotes", 0) if result else 0
-                    except Exception:
-                        rec["qws"] = 0
-                
-                if self.modes.get("bws"):
-                    # Точная
-                    try:
-                        words = phrase.split()
-                        exact_phrase = " ".join([f"!{w}" for w in words])
-                        result = freq_service.parse_frequency([exact_phrase], self.geo_ids[0] if self.geo_ids else 225)
-                        rec["bws"] = result[0].get("freq_exact", 0) if result else 0
-                    except Exception:
-                        rec["bws"] = 0
+            if self._mode == "freq":
+                rows = collect_frequency(
+                    self.phrases,
+                    modes=self.modes,
+                    regions=self.geo_ids,
+                    profile=self.profile,
+                )
+            elif self._mode in {"depth-left", "depth-right"}:
+                rows = collect_depth(
+                    self.phrases,
+                    column="left" if self._mode.endswith("left") else "right",
+                    pages=self.depth_cfg.get("pages", 1),
+                    regions=self.geo_ids,
+                    profile=self.profile,
+                )
+            elif self._mode == "forecast":
+                rows = collect_forecast(
+                    self.phrases,
+                    regions=self.geo_ids,
+                    profile_ctx=self.profile_ctx,
+                )
             else:
-                # Мок-данные для тестирования
-                import random
-                if self.modes.get("ws"): rec["ws"] = random.randint(100, 10000)
-                if self.modes.get("qws"): rec["qws"] = random.randint(50, 5000)
-                if self.modes.get("bws"): rec["bws"] = random.randint(10, 1000)
-            
-            self.tick.emit({"type": "freq", "phrase": phrase, "i": i, "n": total, "progress": int(i/total*100)})
-            
-            # Парсинг вглубь
-            if self.depth_cfg.get("enabled"):
-                # TODO: реализовать парсинг вглубь
-                pass
-            
-            rec["status"] = "OK"
-            rows.append(rec)
-        
-        self.done.emit(rows)
+                rows = []
+        except Exception:
+            rows = [
+                {
+                    "phrase": phrase,
+                    "ws": random.randint(100, 9000),
+                    "qws": random.randint(50, 4000),
+                    "bws": random.randint(10, 1200),
+                    "status": "Mock",
+                }
+                for phrase in self.phrases
+            ]
+
+        self.tick.emit(
+            {
+                "type": self._mode,
+                "phrase": "",
+                "current": len(self.phrases),
+                "total": len(self.phrases),
+                "progress": 100,
+            }
+        )
+        self.finished.emit(rows)
+
 
 class ParsingTab(QWidget):
-    """Единая вкладка Парсинг - объединяет Турбо/Частотность/Вглубь"""
-    
-    def __init__(self, parent=None):
+    """Упрощённая вкладка «Парсинг»: частотность + подготовка данных."""
+
+    def __init__(self, parent: QWidget | None = None, keys_panel: KeysPanel | None = None) -> None:
         super().__init__(parent)
-        
-        # Главный сплиттер
+        self._worker: Optional[ParsingWorker] = None
+        self._keys_panel = keys_panel
+        self._current_profile: Optional[str] = None
+        self._profile_context: Optional[dict] = None
+
         splitter = QSplitter(Qt.Horizontal)
         splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(6)
-        
-        # ---- LEFT: параметры ----
+
+        # Левая панель: режимы, глубина, регионы, профиль
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        
-        # Режимы частотности
-        gb_modes = QGroupBox("Режимы частотности (Wordstat)")
-        self.c_ws = QCheckBox("WS (базовая)")
-        self.c_ws.setChecked(True)
-        self.c_qws = QCheckBox('"WS" (в кавычках)')
-        self.c_bws = QCheckBox("!WS (точная)")
-        modes_layout = QVBoxLayout(gb_modes)
-        modes_layout.addWidget(self.c_ws)
-        modes_layout.addWidget(self.c_qws)
-        modes_layout.addWidget(self.c_bws)
-        
-        # Парсинг вглубь
-        gb_depth = QGroupBox("Парсинг вглубь")
-        self.ch_depth = QCheckBox("Включить парсинг вглубь")
-        self.sb_pages = QSpinBox()
-        self.sb_pages.setRange(1, 40)
-        self.sb_pages.setValue(20)
-        self.ch_left = QCheckBox("Левая колонка")
-        self.ch_left.setChecked(True)
-        self.ch_right = QCheckBox("Правая колонка")
-        depth_layout = QVBoxLayout(gb_depth)
-        depth_layout.addWidget(self.ch_depth)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        modes_box = QGroupBox("Режимы частотности (Wordstat)")
+        self.chk_ws = QCheckBox("WS (базовая)")
+        self.chk_ws.setChecked(True)
+        self.chk_qws = QCheckBox('"WS" (в кавычках)')
+        self.chk_bws = QCheckBox("!WS (точная)")
+        modes_layout = QVBoxLayout(modes_box)
+        modes_layout.addWidget(self.chk_ws)
+        modes_layout.addWidget(self.chk_qws)
+        modes_layout.addWidget(self.chk_bws)
+
+        depth_box = QGroupBox("Парсинг вглубь")
+        self.chk_depth = QCheckBox("Включить")
+        self.spn_pages = QSpinBox()
+        self.spn_pages.setRange(1, 40)
+        self.spn_pages.setValue(10)
+        self.chk_left = QCheckBox("Левая колонка")
+        self.chk_right = QCheckBox("Правая колонка")
+        depth_layout = QHBoxLayout(depth_box)
+        depth_layout.addWidget(self.chk_depth)
         depth_layout.addWidget(QLabel("Страниц:"))
-        depth_layout.addWidget(self.sb_pages)
-        depth_layout.addWidget(self.ch_left)
-        depth_layout.addWidget(self.ch_right)
-        
-        # Регионы
-        gb_geo = QGroupBox("Регионы (дерево)")
-        self.geo = GeoTree()
-        geo_layout = QVBoxLayout(gb_geo)
-        geo_layout.addWidget(self.geo)
-        
-        # Аккаунт
-        gb_acc = QGroupBox("Аккаунт / профиль")
-        self.acc = QComboBox()
-        self.acc.addItems(["Текущий", "Все по очереди"])
-        acc_layout = QVBoxLayout(gb_acc)
-        acc_layout.addWidget(self.acc)
-        
-        left_layout.addWidget(gb_modes)
-        left_layout.addWidget(gb_depth)
-        left_layout.addWidget(gb_geo, 1)
-        left_layout.addWidget(gb_acc)
-        
-        # ---- CENTER: фразы + результаты ----
+        depth_layout.addWidget(self.spn_pages)
+        depth_layout.addWidget(self.chk_left)
+        depth_layout.addWidget(self.chk_right)
+
+        geo_box = QGroupBox("Регионы (дерево)")
+        self.geo_tree = GeoTree()
+        geo_layout = QVBoxLayout(geo_box)
+        geo_layout.addWidget(self.geo_tree)
+
+        profile_box = QGroupBox("Аккаунт / профиль")
+        self.cmb_profile = QComboBox()
+        self.cmb_profile.addItems(["Текущий", "Все по очереди"])
+        profile_layout = QVBoxLayout(profile_box)
+        profile_layout.addWidget(self.cmb_profile)
+
+        left_layout.addWidget(modes_box)
+        left_layout.addWidget(depth_box)
+        left_layout.addWidget(geo_box, 1)
+        left_layout.addWidget(profile_box)
+
+        # Центр: ввод фраз + таблица результатов
         center = QWidget()
         center_layout = QVBoxLayout(center)
-        
-        # Ввод фраз
+        center_layout.setContentsMargins(0, 0, 0, 0)
+
         self.phrases_edit = QTextEdit()
-        self.phrases_edit.setPlaceholderText("Вставьте ключевые фразы (по одной на строку)...")
+        self.phrases_edit.setPlaceholderText("Введите ключевые фразы (по одной на строку)…")
         self.phrases_edit.setMaximumHeight(150)
-        
-        # Кнопки
-        buttons = QHBoxLayout()
-        self.btn_run = QPushButton("▶ ЗАПУСТИТЬ ПАРСИНГ")
-        self.btn_stop = QPushButton("■ ОСТАНОВИТЬ")
+
+        controls = QHBoxLayout()
+        self.btn_run = QPushButton("▶ Запустить парсинг")
+        self.btn_stop = QPushButton("■ Остановить")
         self.btn_stop.setEnabled(False)
         self.btn_export = QPushButton("💾 Экспорт в CSV")
-        buttons.addWidget(self.btn_run)
-        buttons.addWidget(self.btn_stop)
-        buttons.addWidget(self.btn_export)
-        buttons.addStretch()
-        
-        # Прогресс
+        controls.addWidget(self.btn_run)
+        controls.addWidget(self.btn_stop)
+        controls.addWidget(self.btn_export)
+        controls.addStretch()
+
         self.progress = QProgressBar()
         self.progress.setVisible(False)
-        
-        # Таблица результатов
+
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(["Фраза", "WS", '"WS"', "!WS", "Статус", "Время", "Действия"])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
-        
+
         center_layout.addWidget(QLabel("Ключевые фразы для парсинга:"))
         center_layout.addWidget(self.phrases_edit)
-        center_layout.addLayout(buttons)
+        center_layout.addLayout(controls)
         center_layout.addWidget(self.progress)
         center_layout.addWidget(QLabel("Результаты:"))
         center_layout.addWidget(self.table, 1)
-        
-        # ---- RIGHT: панель ключей/групп ----
-        self.right_panel = KeysPanel()
-        
-        # Собираем все вместе
+
         splitter.addWidget(left)
         splitter.addWidget(center)
-        splitter.addWidget(self.right_panel)
-        splitter.setStretchFactor(0, 0)  # Левая панель фиксированная
-        splitter.setStretchFactor(1, 3)  # Центр растягивается
-        splitter.setStretchFactor(2, 2)  # Правая панель средняя
-        
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 3)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(splitter, 1)
-        
-        # Подключаем обработчики
-        self._worker = None
-        self.btn_run.clicked.connect(self.on_run)
-        self.btn_stop.clicked.connect(self.on_stop)
-        self.btn_export.clicked.connect(self.on_export)
-    
-    def on_run(self):
-        """Запустить парсинг"""
-        phrases = [p.strip() for p in self.phrases_edit.toPlainText().splitlines() if p.strip()]
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(splitter)
+
+        self._wire_signals()
+        self.refresh_profiles()
+
+    # ------------------------------------------------------------------ API
+    def set_keys_panel(self, panel: KeysPanel) -> None:
+        self._keys_panel = panel
+
+    def append_phrases(self, phrases: list[str]) -> None:
+        existing = self.phrases_edit.toPlainText().splitlines()
+        merged = existing + [phrase for phrase in phrases if phrase.strip()]
+        self.phrases_edit.setPlainText("\n".join(sorted(set(phrase.strip() for phrase in merged if phrase.strip()))))
+
+    def refresh_profiles(self) -> None:
+        profiles = list_profiles()
+        previous = self._current_profile
+        self.cmb_profile.blockSignals(True)
+        self.cmb_profile.clear()
+        if profiles:
+            self.cmb_profile.addItems(profiles)
+            if previous and previous in profiles:
+                index = profiles.index(previous)
+            else:
+                index = 0
+            self.cmb_profile.setCurrentIndex(index)
+            self._current_profile = profiles[index]
+        else:
+            self.cmb_profile.addItem("Текущий")
+            self._current_profile = None
+        self.cmb_profile.blockSignals(False)
+        self._update_profile_context()
+
+    # ------------------------------------------------------------------ slots
+    def _wire_signals(self) -> None:
+        self.btn_run.clicked.connect(self._on_run_clicked)
+        self.btn_stop.clicked.connect(self._on_stop_clicked)
+        self.btn_export.clicked.connect(self._on_export_clicked)
+        self.cmb_profile.currentTextChanged.connect(self._on_profile_changed)
+
+    def _on_profile_changed(self, value: str) -> None:
+        self._current_profile = value or None
+        self._update_profile_context()
+
+    def _update_profile_context(self) -> None:
+        context = get_profile_ctx(self._current_profile) if self._current_profile else get_profile_ctx(None)
+        self._profile_context = context or {"storage_state": None, "proxy": None}
+
+    def _on_run_clicked(self) -> None:
+        phrases = [line.strip() for line in self.phrases_edit.toPlainText().splitlines() if line.strip()]
         if not phrases:
             return
-        
+
         modes = {
-            "ws": self.c_ws.isChecked(),
-            "qws": self.c_qws.isChecked(),
-            "bws": self.c_bws.isChecked()
+            "ws": self.chk_ws.isChecked(),
+            "qws": self.chk_qws.isChecked(),
+            "bws": self.chk_bws.isChecked(),
         }
-        
         depth_cfg = {
-            "enabled": self.ch_depth.isChecked(),
-            "pages": self.sb_pages.value(),
-            "left": self.ch_left.isChecked(),
-            "right": self.ch_right.isChecked()
+            "enabled": self.chk_depth.isChecked(),
+            "pages": self.spn_pages.value(),
+            "left": self.chk_left.isChecked(),
+            "right": self.chk_right.isChecked(),
         }
-        
-        geo_ids = self.geo.selected_geo_ids()
-        
-        # UI
+        geo_ids = self.geo_tree.selected_geo_ids()
+
         self.btn_run.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.progress.setVisible(True)
         self.progress.setValue(0)
         self.table.setRowCount(0)
-        
-        # Запускаем воркер
-        self._worker = ParsingWorker(phrases, modes, depth_cfg, geo_ids, self)
-        self._worker.tick.connect(self.on_tick)
-        self._worker.done.connect(self.on_done)
+
+        mode = "freq"
+        self._worker = ParsingWorker(
+            mode,
+            phrases,
+            modes,
+            depth_cfg,
+            geo_ids,
+            self._current_profile,
+            self._profile_context,
+            self,
+        )
+        self._worker.tick.connect(self._on_worker_tick)
+        self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
-    
-    def on_stop(self):
-        """Остановить парсинг"""
+
+    def _on_stop_clicked(self) -> None:
         if self._worker:
             self._worker.stop()
             self._worker = None
         self.btn_run.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.progress.setVisible(False)
-    
-    def on_tick(self, event):
-        """Обновление прогресса"""
-        if event.get("type") == "freq":
-            self.progress.setValue(event.get("progress", 0))
-    
-    def on_done(self, rows):
-        """Парсинг завершен"""
+
+    def _on_worker_tick(self, data: dict) -> None:
+        self.progress.setValue(data.get("progress", 0))
+
+    def _on_worker_finished(self, rows: list[dict]) -> None:
+        self._worker = None
         self.btn_run.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.progress.setVisible(False)
-        
-        # Заполняем таблицу
+
         self.table.setRowCount(0)
-        for row in rows:
-            i = self.table.rowCount()
-            self.table.insertRow(i)
-            
+        for record in rows:
+            row_idx = self.table.rowCount()
+            self.table.insertRow(row_idx)
             values = [
-                row["phrase"],
-                str(row.get("ws", "")),
-                str(row.get("qws", "")),
-                str(row.get("bws", "")),
-                row.get("status", ""),
+                record.get("phrase", ""),
+                record.get("ws", ""),
+                record.get("qws", ""),
+                record.get("bws", ""),
+                record.get("status", ""),
                 time.strftime("%H:%M:%S"),
-                "➜"  # Кнопка действий
+                "⋯",
             ]
-            
-            for j, val in enumerate(values):
-                self.table.setItem(i, j, QTableWidgetItem(str(val)))
-        
-        # Обновляем правую панель - добавляем фразы в группы
-        # Группируем по первому слову для демонстрации
-        from collections import defaultdict
-        groups_data = defaultdict(list)
-        
-        for r in rows:
-            phrase = r["phrase"]
-            # Определяем группу по первому слову
-            first_word = phrase.split()[0] if phrase else "Прочее"
-            groups_data[first_word].append({
-                "phrase": phrase,
-                "freq": r.get("ws", 0),
-                "freq_quotes": r.get("qws", 0),
-                "freq_exact": r.get("bws", 0)
-            })
-        
-        # Конвертируем в формат для KeysPanel
-        self.right_panel.update_groups(groups_data)
-    
-    def on_export(self):
-        """Экспорт в CSV"""
-        from PySide6.QtWidgets import QFileDialog
-        import csv
-        
-        filename, _ = QFileDialog.getSaveFileName(self, "Экспорт в CSV", "", "CSV Files (*.csv)")
+            for col, value in enumerate(values):
+                self.table.setItem(row_idx, col, QTableWidgetItem(str(value)))
+
+        if self._keys_panel:
+            groups = defaultdict(list)
+            for record in rows:
+                phrase = record.get("phrase", "")
+                group_name = phrase.split()[0] if phrase else "Прочее"
+                groups[group_name].append(
+                    {
+                        "phrase": phrase,
+                        "freq_total": record.get("ws", 0),
+                        "freq_quotes": record.get("qws", 0),
+                        "freq_exact": record.get("bws", 0),
+                    }
+                )
+            self._keys_panel.load_groups(groups)
+
+    def _on_export_clicked(self) -> None:
+        filename, _ = QFileDialog.getSaveFileName(self, "Экспорт в CSV", "keyset_export.csv", "CSV files (*.csv)")
         if not filename:
             return
-        
+
         rows = []
-        for i in range(self.table.rowCount()):
+        for r in range(self.table.rowCount()):
             row = []
-            for j in range(self.table.columnCount() - 1):  # Без колонки действий
-                item = self.table.item(i, j)
+            for c in range(self.table.columnCount() - 1):
+                item = self.table.item(r, c)
                 row.append(item.text() if item else "")
             rows.append(row)
-        
-        with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.writer(f)
+
+        import csv
+
+        with open(filename, "w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.writer(handle, delimiter=";")
             writer.writerow(["Фраза", "WS", '"WS"', "!WS", "Статус", "Время"])
             writer.writerows(rows)
+
+
+__all__ = ["ParsingTab"]
