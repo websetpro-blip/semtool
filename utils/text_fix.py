@@ -20,6 +20,11 @@ def fix_mojibake(value: Optional[str]) -> Optional[str]:
     if value is None or not isinstance(value, str):
         return value
 
+    # Heuristic: only attempt recovery if mojibake markers present
+    suspicious = any(ch in value for ch in ("Ð", "Ñ", "Ò", "Ó", "Р", "Ѓ", "�"))
+    if not suspicious:
+        return value
+
     # Try latin1 -> utf-8 (common when UTF-8 bytes were read as latin1)
     try:
         return value.encode("latin1").decode("utf-8")

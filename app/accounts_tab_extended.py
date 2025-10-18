@@ -120,9 +120,12 @@ class AutoLoginThread(QThread):
 
         self.status_signal.emit(f"[OK] Профиль РёР· Р'Р]: {profile_path}")
 
-        if not profile_path.startswith("C:"):
-            profile_path = f"C:/AI/yandex/{profile_path}"
-            self.status_signal.emit(f"[INFO] Путь преобразован: {profile_path}")
+        base_dir = Path("C:/AI/yandex")
+        profile_path_obj = Path(profile_path)
+        if not profile_path_obj.is_absolute():
+            profile_path_obj = base_dir / profile_path_obj
+        profile_path = str(profile_path_obj).replace("\\", "/")
+        self.status_signal.emit(f"[INFO] Используем профиль: {profile_path}")
 
         accounts_file = Path("C:/AI/yandex/configs/accounts.json")
         if not accounts_file.exists():
@@ -630,21 +633,48 @@ class AccountsTabExtended(QWidget):
         self.table.blockSignals(False)
         self._update_buttons()
 
+    @staticmethod
+    def _normalize_profile_path(value: Optional[str], account_name: str) -> str:
+        """Привести значение профиля к абсолютному пути."""
+        base_dir = Path("C:/AI/yandex")
+
+        if value:
+            raw = Path(str(value).strip())
+        else:
+            raw = Path(".profiles") / account_name
+
+        if str(raw).startswith(".profiles"):
+            raw = base_dir / raw
+        elif not raw.is_absolute():
+            raw = base_dir / ".profiles" / raw
+
+        return str(raw).replace("\\", "/")
+
+    @staticmethod
+    def _format_profile_label(path: str, subtitle: str = "") -> str:
+        tail = Path(path).name
+        hint = f" {subtitle}" if subtitle else ""
+        return f"{tail}{hint} — {path}"
+
     def _profile_options(self, account):
         """Сформировать список доступных профилей для аккаунта."""
-        options = [(account.name, f"{account.name} (личный)")]
+        current = self._normalize_profile_path(account.profile_path, account.name)
+        options = [(current, self._format_profile_label(current, "(текущий)"))]
+
+        personal_default = self._normalize_profile_path(f".profiles/{account.name}", account.name)
+        if personal_default not in {opt[0] for opt in options}:
+            options.append((personal_default, self._format_profile_label(personal_default, "(C:/AI/yandex)")))
+
         if account.name != "wordstat_main":
-            options.append(("wordstat_main", "wordstat_main (общий)"))
+            shared = self._normalize_profile_path(".profiles/wordstat_main", "wordstat_main")
+            if shared not in {opt[0] for opt in options}:
+                options.append((shared, self._format_profile_label(shared, "(общий)")))
+
         return options
 
     def _profile_value_from_account(self, account):
         """Определить текущий профиль из пути аккаунта."""
-        if not account.profile_path:
-            return account.name
-        profile_name = Path(account.profile_path).name
-        if "wordstat_main" in profile_name:
-            return "wordstat_main"
-        return profile_name or account.name
+        return self._normalize_profile_path(account.profile_path, account.name)
 
     @staticmethod
     def _profile_label(options, value):
@@ -652,7 +682,7 @@ class AccountsTabExtended(QWidget):
         for option_value, label in options:
             if option_value == value:
                 return label
-        return value
+        return AccountsTabExtended._format_profile_label(value)
     
     def _get_status_label(self, status):
         """Получить метку статуса"""
@@ -697,12 +727,7 @@ class AccountsTabExtended(QWidget):
     def _get_auth_status(self, account):
         """Получить статус авторизации"""
         # Проверяем куки в выбранном профиле
-        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
-        
-        # Если используем wordstat_main - проверяем куки там
-        if "wordstat_main" in profile_path:
-            profile_path = "C:/AI/yandex/.profiles/wordstat_main"
-            
+        profile_path = self._normalize_profile_path(account.profile_path, account.name)
         from pathlib import Path
         cookies_file = Path(profile_path) / "Default" / "Cookies"
         
@@ -1044,14 +1069,16 @@ class AccountsTabExtended(QWidget):
         import time
         time.sleep(1)
         
+        base_dir = Path("C:/AI/yandex")
         for row in selected_rows:
             account = self._accounts[row]
             # Берем профиль ИЗ БАЗЫ ДАННЫХ
-            profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
-            
-            # Если путь относительный - делаем полным
-            if not profile_path.startswith("C:"):
-                profile_path = f"C:/AI/yandex/{profile_path}"
+            profile_path = account.profile_path or f".profiles/{account.name}"
+
+            profile_path_obj = Path(profile_path)
+            if not profile_path_obj.is_absolute():
+                profile_path_obj = base_dir / profile_path_obj
+            profile_path = str(profile_path_obj).replace("\\", "/")
             
             # Используем уникальный порт для каждого аккаунта
             port = 9222 + (hash(account.name) % 100)
@@ -1539,12 +1566,12 @@ class AccountsTabExtended(QWidget):
                 "Для изменения куков откройте браузер с профилем wordstat_main\n"
                 "и войдите в Яндекс вручную или используйте кнопку 'Автологин'")
     
-    def _update_profile(self, account_id, profile_key):
+    def _update_profile(self, account_id, profile_key, account_name: Optional[str] = None):
         """Обновить профиль для аккаунта"""
-        profile_name = profile_key or "wordstat_main"
-        profile_path = f"C:/AI/yandex/.profiles/{profile_name}"
+        fallback_name = account_name or "wordstat_main"
+        profile_path = self._normalize_profile_path(profile_key, fallback_name)
         account_service.update_account(account_id, profile_path=profile_path)
-        print(f"[Accounts] Профиль для аккаунта {account_id} изменен на {profile_name}")
+        print(f"[Accounts] Профиль для аккаунта {account_id} изменён на {profile_path}")
 
     def _handle_item_changed(self, item):
         """Отслеживаем изменение профиля через делегат."""
@@ -1554,15 +1581,17 @@ class AccountsTabExtended(QWidget):
         if row < 0 or row >= len(self._accounts):
             return
         account = self._accounts[row]
-        profile_value = item.data(Qt.EditRole) or item.text()
+        profile_value = (item.data(Qt.EditRole) or item.text() or "").strip()
+        normalized_path = self._normalize_profile_path(profile_value, account.name)
         options = self._profile_options(account)
-        label = self._profile_label(options, profile_value)
+        label = self._profile_label(options, normalized_path)
         self.table.blockSignals(True)
         item.setData(Qt.DisplayRole, label)
+        item.setData(Qt.EditRole, normalized_path)
         item.setText(label)
         self.table.blockSignals(False)
-        account.profile_path = f"C:/AI/yandex/.profiles/{profile_value}"
-        self._update_profile(account.id, profile_value)
+        account.profile_path = normalized_path
+        self._update_profile(account.id, normalized_path, account.name)
         
     def on_table_double_click(self, row, col):
         """Обработка двойного клика по таблице"""
@@ -1573,14 +1602,14 @@ class AccountsTabExtended(QWidget):
     def edit_cookies(self, row):
         """Редактировать куки для аккаунта"""
         account = self._accounts[row]
-        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
+        base_dir = Path("C:/AI/yandex")
+        profile_path = account.profile_path or f".profiles/{account.name}"
+        profile_path_obj = Path(profile_path)
+        if not profile_path_obj.is_absolute():
+            profile_path_obj = base_dir / profile_path_obj
+        profile_path = str(profile_path_obj).replace("\\", "/")
         
-        # Если путь относительный - делаем полный
-        if not profile_path.startswith("C:"):
-            profile_path = f"C:/AI/yandex/{profile_path}"
-            
-        from pathlib import Path
-        cookies_file = Path(profile_path) / "Default" / "Cookies"
+        cookies_file = profile_path_obj / "Default" / "Cookies"
         
         # Создаем диалог для отображения информации о куках
         msg = QMessageBox(self)
@@ -1630,11 +1659,12 @@ class AccountsTabExtended(QWidget):
         account = self._accounts[selected[0]]
         
         # Определяем профиль
-        profile_path = account.profile_path or f"C:/AI/yandex/.profiles/{account.name}"
-        
-        # Если путь относительный - делаем полный
-        if not profile_path.startswith("C:"):
-            profile_path = f"C:/AI/yandex/{profile_path}"
+        base_dir = Path("C:/AI/yandex")
+        profile_path = account.profile_path or f".profiles/{account.name}"
+        profile_path_obj = Path(profile_path)
+        if not profile_path_obj.is_absolute():
+            profile_path_obj = base_dir / profile_path_obj
+        profile_path = str(profile_path_obj).replace("\\", "/")
             
         # Запускаем Chrome
         chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"

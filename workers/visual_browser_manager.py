@@ -52,13 +52,16 @@ class VisualBrowserManager:
                            profile_path: str, proxy: Optional[str] = None):
         """Start Chrome with specified profile"""
         
-        # Используем профиль конкретного аккаунта
+        base_dir = Path("C:/AI/yandex")
+
         if not profile_path or profile_path == ".profiles/demo_account":
-            # Если профиль не указан или demo - используем профиль аккаунта
-            profile_path = f"C:/AI/yandex/.profiles/{account_name}"
-        elif not profile_path.startswith("C:"):
-            # Если путь относительный - делаем абсолютный
-            profile_path = f"C:/AI/yandex/{profile_path}"
+            profile_path_obj = base_dir / ".profiles" / account_name
+        else:
+            profile_path_obj = Path(profile_path)
+            if not profile_path_obj.is_absolute():
+                profile_path_obj = base_dir / profile_path_obj
+
+        profile_path = str(profile_path_obj).replace("\\", "/")
         
         print(f"[Browser {browser_id}] Starting Chrome for account: {account_name}")
         print(f"[Browser {browser_id}] Using profile: {profile_path}")
@@ -177,3 +180,54 @@ class VisualBrowserManager:
             return "passport" not in page.url
         except:
             return False
+
+    async def wait_for_all_logins(self, timeout: int = 300, poll_delay: float = 3.0) -> bool:
+        """Poll launched browsers until each confirms Wordstat login or timeout expires."""
+        if not self.browsers:
+            print("[VISUAL] No browsers were launched; nothing to wait for")
+            return False
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+
+        while loop.time() < deadline:
+            pending = []
+            for browser_id, browser in self.browsers.items():
+                if not browser.page:
+                    pending.append(browser_id)
+                    continue
+
+                try:
+                    authorized = await self.check_login_status(browser.page)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[Browser {browser_id}] Login check failed: {exc}")
+                    browser.status = BrowserStatus.ERROR
+                    continue
+
+                if authorized:
+                    if browser.status != BrowserStatus.LOGGED_IN:
+                        print(f"[Browser {browser_id}] Login confirmed")
+                    browser.status = BrowserStatus.LOGGED_IN
+                else:
+                    browser.status = BrowserStatus.LOGIN_REQUIRED
+                    pending.append(browser_id)
+
+            if not pending:
+                return True
+
+            await asyncio.sleep(poll_delay)
+
+        print("[VISUAL] Timeout waiting for logins")
+        return False
+
+    def show_status(self) -> None:
+        """Print current status of managed browsers to stdout."""
+        if not self.browsers:
+            print("[VISUAL] Browsers are not running")
+            return
+
+        print("\n[VISUAL] Browser statuses:")
+        for browser_id, browser in self.browsers.items():
+            status = browser.status.value if hasattr(browser.status, "value") else str(browser.status)
+            print(f"  [{browser_id}] {browser.name}: {status} ({browser.profile_path})")
+        print()

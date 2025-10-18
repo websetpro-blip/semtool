@@ -64,7 +64,7 @@ class TurboWordstatParser:
         self.pages = []  # мульти-табы
         self.results = {}
         self.aimd = AIMDController()
-        self.num_tabs = 1  # количество вкладок для стабильной работы
+        self.num_tabs = 10  # количество вкладок для обработки (боевой режим)
         self.num_browsers = 1  # количество видимых браузеров
         self.visual_manager = None  # Менеджер визуальных браузеров
         self.db_path = Path("C:/AI/yandex/keyset/data/keyset.db")
@@ -425,10 +425,10 @@ class TurboWordstatParser:
         for acc in all_accounts_db:
             if acc.name != "demo_account":
                 # Берем профиль из БД!
-                profile_path = acc.profile_path or f".profiles/{acc.name}"
-                # Делаем полным путем если относительный
-                if not profile_path.startswith("C:"):
-                    profile_path = f"C:/AI/yandex/{profile_path}"
+                profile_path_obj = Path(acc.profile_path or f".profiles/{acc.name}")
+                if not profile_path_obj.is_absolute():
+                    profile_path_obj = Path("C:/AI/yandex") / profile_path_obj
+                profile_path = str(profile_path_obj).replace("\\", "/")
                 
                 all_accounts.append({
                     "name": acc.name,
@@ -438,9 +438,10 @@ class TurboWordstatParser:
         
         if self.account:
             # Добавляем основной аккаунт первым
-            profile_path = self.account.profile_path or f".profiles/{self.account.name}"
-            if not profile_path.startswith("C:"):
-                profile_path = f"C:/AI/yandex/{profile_path}"
+            profile_path_obj = Path(self.account.profile_path or f".profiles/{self.account.name}")
+            if not profile_path_obj.is_absolute():
+                profile_path_obj = Path("C:/AI/yandex") / profile_path_obj
+            profile_path = str(profile_path_obj).replace("\\", "/")
             
             accounts.append({
                 "name": self.account.name,
