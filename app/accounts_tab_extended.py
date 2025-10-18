@@ -665,6 +665,11 @@ class AccountsTabExtended(QWidget):
         if personal_default not in {opt[0] for opt in options}:
             options.append((personal_default, self._format_profile_label(personal_default)))
 
+        if account.name == "dsmismirnov":
+            shared = self._normalize_profile_path(".profiles/wordstat_main", "wordstat_main")
+            if shared not in {opt[0] for opt in options}:
+                options.append((shared, self._format_profile_label(shared, "(основной)")))
+
         return options
 
     def _profile_value_from_account(self, account):
