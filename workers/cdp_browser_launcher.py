@@ -19,7 +19,7 @@ class CDPBrowserLauncher:
     WORKING_ACCOUNTS = [
         {
             "name": "dsmismirnov",
-            "profile": ".profiles/wordstat_main",  # Использует wordstat_main!
+            "profile": ".profiles/dsmismirnov",
             "port": 9222
         },
         {

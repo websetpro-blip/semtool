@@ -183,7 +183,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
     def _load_accounts_info(self):
         """Загружает список аккаунтов для динамических столбцов"""
         accounts = account_service.list_accounts()
-        self._accounts_list = [acc for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
+        self._accounts_list = [acc for acc in accounts if acc.name != "demo_account"]
         self._account_columns = [acc.name for acc in self._accounts_list]
     
     def _create_ui(self):
@@ -317,7 +317,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         # Обновляем список аккаунтов
         accounts = account_service.list_accounts()
-        self._accounts_list = [acc for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
+        self._accounts_list = [acc for acc in accounts if acc.name != "demo_account"]
         
         for acc in self._accounts_list:
             if acc.proxy:
@@ -544,7 +544,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         # Диалог выбора аккаунтов
         accounts = account_service.list_accounts()
-        account_names = [acc.name for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
+        account_names = [acc.name for acc in accounts if acc.name != "demo_account"]
         
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Применить к аккаунтам")
@@ -605,7 +605,7 @@ class ProxyManagerDialog(QtWidgets.QDialog):
         
         # Получаем все аккаунты (кроме demo и wordstat_main)
         accounts = account_service.list_accounts()
-        target_accounts = [acc for acc in accounts if acc.name not in ["demo_account", "wordstat_main"]]
+        target_accounts = [acc for acc in accounts if acc.name != "demo_account"]
         
         if not target_accounts:
             QtWidgets.QMessageBox.warning(

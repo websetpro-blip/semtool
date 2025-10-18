@@ -168,7 +168,7 @@ def sync_from_accounts() -> int:
     added = 0
     
     for acc in accounts:
-        if acc.proxy and acc.name not in ["demo_account", "wordstat_main"]:
+        if acc.proxy and acc.name != "demo_account":
             proxy = add_proxy(acc.proxy)
             if proxy:
                 added += 1

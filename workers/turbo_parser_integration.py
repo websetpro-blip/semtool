@@ -142,12 +142,20 @@ class TurboWordstatParser:
                 # Пытаемся автоматически запустить Chrome
                 print("[TURBO] Пытаюсь запустить Chrome с CDP...")
                 chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-                profile_path = r"C:\AI\yandex\.profiles\wordstat_main"
+                if self.account and getattr(self.account, "profile_path", None):
+                    profile_path = Path(self.account.profile_path)
+                elif self.account and getattr(self.account, "name", None):
+                    profile_path = Path(f"C:/AI/yandex/.profiles/{self.account.name}")
+                else:
+                    profile_path = Path("C:/AI/yandex/.profiles/default")
+                if not profile_path.is_absolute():
+                    profile_path = Path("C:/AI/yandex") / profile_path
+                profile_path_str = str(profile_path).replace("\\", "/")
                 
                 subprocess.Popen([
                     chrome_path,
                     f"--remote-debugging-port=9222",
-                    f"--user-data-dir={profile_path}",
+                    f"--user-data-dir={profile_path_str}",
                     "https://wordstat.yandex.ru"
                 ])
                 
